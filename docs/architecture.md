@@ -1,45 +1,61 @@
-# Architecture v0.2
+# Architecture v0.3
 
 ## Scope
 
-Version 0.2 extends the publishing slice with a complete inbound flow. It consumes MQTT
-telemetry, validates the untrusted boundary, and invokes an in-memory application use
-case. Persistence, APIs, and anomaly detection remain deferred.
+Version 0.3 adds durable time-series persistence to the v0.2 ingestion flow. It stops
+before APIs and anomaly detection.
 
 ```text
-domain.TelemetryReading
-      ▲              ▲
-      │              │
-simulator       application.TelemetryApplicationService
-      │              ▲ implements TelemetryHandler
-      ▼              │
-MqttPublisher   MqttTelemetryConsumer
-      │              ▲
-      └──► Mosquitto ─┘
+MachineSimulator → MqttPublisher → Mosquitto → MqttTelemetryConsumer
+                                                    │ validated TelemetryReading
+                                                    ▼
+                                      TelemetryApplicationService
+                                                    │ TelemetryRepository port
+                                                    ▼
+                                      PsycopgTelemetryRepository
+                                                    │ parameterized INSERT
+                                                    ▼
+                               TimescaleDB telemetry_readings hypertable
 ```
 
 ## Dependency direction
 
-- `domain` owns the strict Pydantic v2 data contract.
-- `application` accepts only `TelemetryReading` through a small inbound protocol and
-  knows nothing about MQTT, topics, payload bytes, or Paho.
-- `infrastructure.mqtt` owns connections, subscriptions, topic interpretation, JSON
-  validation, rejection behavior, and transport logging.
-- `main` and `consumer_main` are the two composition roots.
+- `domain` owns the strict Pydantic v2 `TelemetryReading` contract.
+- `application` defines the inbound `TelemetryHandler`, outbound
+  `TelemetryRepository`, and orchestration service. It knows neither transport nor SQL.
+- `infrastructure.mqtt` translates untrusted MQTT messages into validated application
+  input.
+- `infrastructure.database` implements the persistence port with Psycopg 3.
+- `consumer_main` composes and owns both adapters and their lifecycles.
 
-The consumer rejects invalid JSON/UTF-8, invalid schemas, malformed telemetry topics,
-and payload/topic machine-ID mismatches. Expected input failures do not stop the MQTT
-network loop. Unexpected application failures are logged and isolated. Raw payloads are
-not logged.
+## Time-series model
 
-## Reliability characteristics
+`telemetry_readings` is a TimescaleDB hypertable partitioned on `recorded_at`. The
+machine timestamp is preserved separately from `ingested_at`, which records arrival at
+the database. The composite primary key `(machine_id, recorded_at)` includes the
+partitioning column and provides the idempotency key.
 
-- QoS 1 requests at-least-once delivery; later stateful consumers must be idempotent.
-- Both processes handle `SIGTERM`/`SIGINT` and close their MQTT sessions.
-- Broker failures use bounded retry delays.
-- Stable client IDs and Paho reconnect backoff support reconnection.
-- Mosquitto persists broker state in a named volume.
-- Compose waits for broker health before starting both clients.
+The database repeats essential contract constraints as defense in depth. SQL uses bound
+parameters. Schema creation is an idempotent container initialization script; changing
+an already deployed schema will require explicit migrations in a later release.
 
-These remain development foundations. Authentication, TLS, per-topic authorization,
-dead-letter handling, metrics, and production deployment are future work.
+## Delivery and failure semantics
+
+- MQTT QoS 1 can redeliver messages.
+- The consumer enables manual acknowledgements.
+- A valid message is acknowledged only after the repository transaction commits.
+- Invalid input is acknowledged and discarded after structured warning logging.
+- A storage/application exception remains unacknowledged and is logged; duplicate
+  delivery is safe because insertion uses `ON CONFLICT DO NOTHING`.
+- The Psycopg pool bounds concurrent connections and checks a connection before use.
+
+This is not exactly-once delivery: the design combines at-least-once transport with an
+idempotent database write to achieve effectively-once storage for the chosen natural
+key.
+
+## Operational boundaries
+
+Compose waits for both Mosquitto and TimescaleDB health before starting the consumer.
+Local credentials and published ports are development conveniences. Production still
+requires secret management, TLS, topic authorization, database backups, migrations,
+metrics, and alerting.

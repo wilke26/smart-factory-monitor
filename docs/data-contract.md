@@ -1,8 +1,8 @@
-# Telemetry data contract v0.1
+# Telemetry data contract
 
 Topic: `factory/{area}/{machine_id}/telemetry`
 
-Canonical v0.1 example:
+Canonical example:
 
 ```json
 {
@@ -25,4 +25,17 @@ Canonical v0.1 example:
 | `production_rate` | integer | 0…10,000 | Parts per minute |
 
 Unknown fields are rejected. The model is immutable after validation. Breaking changes
-require a versioned contract/topic decision before consumers are introduced.
+require a versioned contract/topic decision before producers and consumers change.
+
+## Persistence mapping
+
+| Contract field | Database column |
+|---|---|
+| `machine_id` | `machine_id` |
+| `timestamp` | `recorded_at` |
+| `temperature_c` | `temperature_c` |
+| `vibration_mm_s` | `vibration_mm_s` |
+| `power_kw` | `power_kw` |
+| `production_rate` | `production_rate` |
+
+The database adds `ingested_at`. `(machine_id, recorded_at)` is the idempotency key.

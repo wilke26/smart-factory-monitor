@@ -17,6 +17,10 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
         "PUBLISH_INTERVAL_SECONDS",
         "SIMULATOR_SEED",
         "LOG_LEVEL",
+        "DATABASE_URL",
+        "DATABASE_POOL_MIN_SIZE",
+        "DATABASE_POOL_MAX_SIZE",
+        "DATABASE_CONNECT_TIMEOUT_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -27,6 +31,9 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
     assert settings.mqtt_qos == 1
     assert settings.mqtt_consumer_client_id == "smart-factory-consumer"
     assert settings.mqtt_topic_filter == "factory/+/+/telemetry"
+    assert settings.database_pool_min_size == 1
+    assert settings.database_pool_max_size == 4
+    assert settings.database_url.endswith("@localhost:5432/smart_factory")
 
 
 def test_reads_optional_seed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -56,4 +63,19 @@ def test_rejects_empty_topic_filter(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MQTT_TOPIC_FILTER", " ")
 
     with pytest.raises(ValueError, match="must not be empty"):
+        Settings.from_env()
+
+
+def test_rejects_invalid_database_pool_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_POOL_MIN_SIZE", "5")
+    monkeypatch.setenv("DATABASE_POOL_MAX_SIZE", "4")
+
+    with pytest.raises(ValueError, match="must not exceed"):
+        Settings.from_env()
+
+
+def test_rejects_non_positive_database_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "0")
+
+    with pytest.raises(ValueError, match="greater than zero"):
         Settings.from_env()

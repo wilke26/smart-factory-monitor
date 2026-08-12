@@ -12,6 +12,8 @@ Human responsibilities remain:
 - inspect container and CI configuration;
 - reject unnecessary patterns or premature features.
 
-For v0.1, automated checks cover the Pydantic boundary, simulator ranges, deterministic
-seeding, serialization round trips, linting, formatting, static types and the container
-build. A real-broker smoke test is still a documented manual acceptance test.
+For v0.3, automated checks cover the Pydantic boundary, simulator, MQTT acceptance and
+rejection, application ports, parameterized/idempotent persistence, configuration,
+serialization round trips, linting, formatting, static types and container builds. The
+release acceptance test also verifies a real MQTT message reaches the TimescaleDB
+hypertable and an invalid message does not create a row.

@@ -21,6 +21,10 @@ def settings() -> Settings:
         publish_interval_seconds=0.01,
         simulator_seed=42,
         log_level="INFO",
+        database_url="postgresql://unused",
+        database_pool_min_size=1,
+        database_pool_max_size=4,
+        database_connect_timeout_seconds=10,
     )
 
 

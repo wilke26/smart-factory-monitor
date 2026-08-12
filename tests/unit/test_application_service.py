@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 from unittest.mock import Mock
 
+import pytest
+
 from smart_factory.application.services.telemetry import TelemetryApplicationService
 from smart_factory.domain.telemetry import TelemetryReading
 
@@ -19,18 +21,36 @@ def reading() -> TelemetryReading:
 def test_processes_reading_without_transport_details() -> None:
     callback = Mock()
     logger = Mock()
-    service = TelemetryApplicationService(on_processed=callback, logger=logger)
+    repository = Mock()
+    repository.save.return_value = True
+    service = TelemetryApplicationService(
+        repository=repository, on_processed=callback, logger=logger
+    )
 
     service.process(reading())
 
     callback.assert_called_once_with(reading())
+    repository.save.assert_called_once_with(reading())
     assert service.processed_count == 1
     logger.info.assert_called_once()
 
 
 def test_callback_is_optional() -> None:
-    service = TelemetryApplicationService(logger=Mock())
+    service = TelemetryApplicationService(repository=Mock(), logger=Mock())
 
     service.process(reading())
 
     assert service.processed_count == 1
+
+
+def test_failed_persistence_does_not_mark_reading_processed() -> None:
+    repository = Mock()
+    repository.save.side_effect = RuntimeError("database unavailable")
+    callback = Mock()
+    service = TelemetryApplicationService(repository=repository, on_processed=callback)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        service.process(reading())
+
+    assert service.processed_count == 0
+    callback.assert_not_called()

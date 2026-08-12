@@ -48,6 +48,7 @@ class MqttTelemetryConsumer:
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_message = self._on_message
+        self._client.manual_ack_set(True)
         self._client.reconnect_delay_set(min_delay=1, max_delay=30)
 
     def connect(self) -> None:
@@ -113,7 +114,7 @@ class MqttTelemetryConsumer:
             self._logger.warning("mqtt_disconnected", extra={"reason": str(reason_code)})
 
     def _on_message(self, client: mqtt.Client, userdata: object, message: mqtt.MQTTMessage) -> None:
-        del client, userdata
+        del userdata
         try:
             reading = TelemetryReading.from_mqtt_payload(message.payload)
             topic_machine_id = self._machine_id_from_topic(message.topic)
@@ -126,8 +127,10 @@ class MqttTelemetryConsumer:
                         "payload_machine_id": reading.machine_id,
                     },
                 )
+                client.ack(message.mid, message.qos)
                 return
             self._handler.process(reading)
+            client.ack(message.mid, message.qos)
             self._logger.info(
                 "telemetry_accepted",
                 extra={"topic": message.topic, "machine_id": reading.machine_id},
@@ -142,11 +145,13 @@ class MqttTelemetryConsumer:
                     "error_types": [item["type"] for item in error.errors()],
                 },
             )
+            client.ack(message.mid, message.qos)
         except ValueError as error:
             self._logger.warning(
                 "telemetry_rejected_invalid_topic",
                 extra={"topic": message.topic, "reason": str(error)},
             )
+            client.ack(message.mid, message.qos)
         except Exception:
             self._logger.exception(
                 "telemetry_processing_failed",

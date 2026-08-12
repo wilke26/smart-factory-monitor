@@ -1,4 +1,27 @@
 services:
+  timescaledb:
+    image: timescale/timescaledb:2.29.0-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smart_factory}
+      POSTGRES_USER: ${POSTGRES_USER:-smart_factory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smart_factory_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+      - ./docker/timescaledb/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+      start_period: 10s
+
   mosquitto:
     image: eclipse-mosquitto:2.0.22
     restart: unless-stopped
@@ -44,6 +67,8 @@ services:
     depends_on:
       mosquitto:
         condition: service_healthy
+      timescaledb:
+        condition: service_healthy
     environment:
       MQTT_HOST: ${MQTT_HOST:-mosquitto}
       MQTT_PORT: ${MQTT_PORT:-1883}
@@ -52,7 +77,12 @@ services:
       MQTT_CONSUMER_CLIENT_ID: ${MQTT_CONSUMER_CLIENT_ID:-smart-factory-consumer}
       MQTT_TOPIC_FILTER: ${MQTT_TOPIC_FILTER:-factory/+/+/telemetry}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://smart_factory:smart_factory_dev@timescaledb:5432/smart_factory}
+      DATABASE_POOL_MIN_SIZE: ${DATABASE_POOL_MIN_SIZE:-1}
+      DATABASE_POOL_MAX_SIZE: ${DATABASE_POOL_MAX_SIZE:-4}
+      DATABASE_CONNECT_TIMEOUT_SECONDS: ${DATABASE_CONNECT_TIMEOUT_SECONDS:-10.0}
 
 volumes:
   mosquitto-data:
   mosquitto-log:
+  timescaledb-data:

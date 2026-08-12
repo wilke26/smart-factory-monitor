@@ -11,3 +11,11 @@ class TelemetryHandler(Protocol):
     def process(self, reading: TelemetryReading) -> None:
         """Process a reading without transport-specific arguments."""
         ...
+
+
+class TelemetryRepository(Protocol):
+    """Outbound port for durable telemetry storage."""
+
+    def save(self, reading: TelemetryReading) -> bool:
+        """Persist a reading and report whether a new row was inserted."""
+        ...

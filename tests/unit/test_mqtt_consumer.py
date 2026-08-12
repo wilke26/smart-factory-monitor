@@ -20,7 +20,7 @@ def consumer(*, handler: Mock | None = None, logger: Mock | None = None) -> Mqtt
 
 
 def message(payload: bytes, topic: str = "factory/hall-a/press-01/telemetry") -> object:
-    return SimpleNamespace(payload=payload, topic=topic)
+    return SimpleNamespace(payload=payload, topic=topic, mid=7, qos=1)
 
 
 @pytest.mark.parametrize("payload", [b"not-json", b"{}", b'{"machine_id":"press-01"}'])
@@ -65,9 +65,12 @@ def test_isolates_application_failure(valid_payload: bytes) -> None:
     logger = Mock()
     instance = consumer(handler=handler, logger=logger)
 
-    instance._on_message(Mock(), None, message(valid_payload))  # type: ignore[arg-type]
+    mqtt_message = message(valid_payload)
+    client = Mock()
+    instance._on_message(client, None, mqtt_message)  # type: ignore[arg-type]
 
     logger.exception.assert_called_once()
+    client.ack.assert_not_called()
 
 
 @patch("smart_factory.infrastructure.mqtt.consumer.mqtt.Client")

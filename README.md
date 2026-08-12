@@ -1,12 +1,12 @@
 # Smart Factory Monitor
 
-Version **0.2** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.3** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
-and passes accepted `TelemetryReading` objects to a transport-independent application
-service.
+and persists accepted `TelemetryReading` objects in a TimescaleDB hypertable through a
+transport-independent application service.
 
-There is intentionally no database, HTTP API, anomaly detection, or ML yet.
+There is intentionally no HTTP API, anomaly detection, or ML yet.
 
 ## Quick start
 
@@ -17,8 +17,9 @@ docker compose up --build
 This starts:
 
 - `mosquitto`: MQTT 5 broker on `localhost:1883`;
+- `timescaledb`: PostgreSQL 16 with the TimescaleDB extension on `localhost:5432`;
 - `simulator`: publishes to `factory/hall-a/press-01/telemetry`;
-- `consumer`: subscribes to `factory/+/+/telemetry`, validates, and processes messages.
+- `consumer`: validates messages and stores them in the `telemetry_readings` hypertable.
 
 The application logs are newline-delimited JSON. Look for `telemetry_published`,
 `telemetry_accepted`, and `telemetry_processed` events.
@@ -31,6 +32,14 @@ docker compose exec mosquitto \
 ```
 
 Stop the stack with `Ctrl+C`, then run `docker compose down`.
+
+Inspect persisted readings:
+
+```bash
+docker compose exec timescaledb psql \
+  -U smart_factory -d smart_factory \
+  -c 'SELECT machine_id, recorded_at, temperature_c FROM telemetry_readings ORDER BY recorded_at DESC LIMIT 5;'
+```
 
 ## Data flow
 
@@ -47,14 +56,26 @@ MqttPublisher ── factory/<area>/<machine>/telemetry ──► Mosquitto
                                               TelemetryReading only
                                                             ▼
                                               TelemetryApplicationService
+                                                            │ TelemetryRepository
+                                                            ▼
+                                             PsycopgTelemetryRepository
+                                                            │
+                                                            ▼
+                                         TimescaleDB telemetry_readings hypertable
 ```
 
 The MQTT adapter is the trust boundary. It never forwards malformed JSON,
 schema-invalid messages, malformed topics, or a payload whose `machine_id` disagrees
 with its topic. Rejections are logged without including raw payloads.
 
-The application service imports neither Paho MQTT nor JSON code. Future HTTP, file, or
-replay adapters can invoke the same `TelemetryHandler` port.
+The application service imports neither Paho MQTT, Psycopg, SQL, nor JSON code. MQTT is
+an inbound adapter; TimescaleDB is an outbound adapter. Future input transports or
+storage implementations can replace either side independently.
+
+MQTT acknowledgements are manual. Valid readings are acknowledged only after the
+database transaction succeeds. Invalid input is acknowledged and discarded so poison
+messages do not loop. The `(machine_id, recorded_at)` primary key and `ON CONFLICT DO
+NOTHING` make QoS 1 redelivery idempotent.
 
 ## Telemetry contract
 
@@ -91,6 +112,10 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `PUBLISH_INTERVAL_SECONDS` | `2.0` | Publish interval |
 | `SIMULATOR_SEED` | empty | Optional deterministic seed |
 | `LOG_LEVEL` | `INFO` | Structured log level |
+| `DATABASE_URL` | local PostgreSQL URL | Psycopg connection string |
+| `DATABASE_POOL_MIN_SIZE` | `1` | Minimum database connections |
+| `DATABASE_POOL_MAX_SIZE` | `4` | Maximum database connections |
+| `DATABASE_CONNECT_TIMEOUT_SECONDS` | `10.0` | Startup database timeout |
 
 > The local Mosquitto configuration permits anonymous, unencrypted access. Do not expose
 > port 1883 to an untrusted network.
@@ -112,8 +137,9 @@ docker compose config --quiet
 ```
 
 Tests cover the contract, configuration, application service, logging, MQTT callbacks,
-valid/invalid ingestion pipelines, and property-based JSON round trips. CI checks Python
-3.12 and 3.13 and enforces at least 80% branch-aware coverage.
+valid/invalid ingestion pipelines, idempotent parameterized persistence, and
+property-based JSON round trips. CI checks Python 3.12 and 3.13 and enforces at least 80%
+branch-aware coverage.
 
 Run the services outside Docker with a reachable broker:
 
@@ -129,7 +155,8 @@ MQTT_HOST=localhost smart-factory-simulator
 - [ADR 0001: MQTT transport](docs/adr/0001-mqtt-for-telemetry-transport.md)
 - [ADR 0002: local anonymous broker](docs/adr/0002-anonymous-local-broker.md)
 - [ADR 0003: MQTT/application separation](docs/adr/0003-separate-mqtt-adapter-from-application-service.md)
+- [ADR 0004: TimescaleDB persistence](docs/adr/0004-timescaledb-telemetry-persistence.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-v0.3 can add persistence behind an outbound application port without rewriting the
-current application service or MQTT adapter.
+v0.4 can add transparent rule-based anomaly detection without changing MQTT ingestion
+or the telemetry persistence boundary.

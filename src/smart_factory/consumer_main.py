@@ -6,6 +6,7 @@ import threading
 
 from smart_factory.application.services.telemetry import TelemetryApplicationService
 from smart_factory.config import Settings
+from smart_factory.infrastructure.database.telemetry_repository import PsycopgTelemetryRepository
 from smart_factory.infrastructure.mqtt.consumer import MqttTelemetryConsumer
 from smart_factory.logging import configure_logging
 
@@ -14,7 +15,12 @@ LOGGER = logging.getLogger(__name__)
 
 def run(settings: Settings, stop_event: threading.Event) -> None:
     """Consume telemetry until a termination signal is received."""
-    service = TelemetryApplicationService()
+    repository = PsycopgTelemetryRepository(
+        settings.database_url,
+        min_size=settings.database_pool_min_size,
+        max_size=settings.database_pool_max_size,
+    )
+    service = TelemetryApplicationService(repository=repository)
     consumer = MqttTelemetryConsumer(
         settings.mqtt_host,
         settings.mqtt_port,
@@ -25,10 +31,12 @@ def run(settings: Settings, stop_event: threading.Event) -> None:
         keepalive=settings.mqtt_keepalive,
     )
     try:
+        repository.open(timeout=settings.database_connect_timeout_seconds)
         consumer.connect()
         stop_event.wait()
     finally:
         consumer.close()
+        repository.close()
 
 
 def main() -> None:
