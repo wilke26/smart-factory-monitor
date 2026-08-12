@@ -12,4 +12,4 @@ COPY src ./src
 RUN pip install --upgrade pip && pip install .
 
 USER app
-ENTRYPOINT ["smart-factory-simulator"]
+CMD ["smart-factory-simulator"]

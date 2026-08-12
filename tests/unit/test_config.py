@@ -10,6 +10,8 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
         "MQTT_QOS",
         "MQTT_KEEPALIVE",
         "MQTT_CLIENT_ID",
+        "MQTT_CONSUMER_CLIENT_ID",
+        "MQTT_TOPIC_FILTER",
         "FACTORY_AREA",
         "MACHINE_ID",
         "PUBLISH_INTERVAL_SECONDS",
@@ -23,6 +25,8 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
     assert settings.topic == "factory/hall-a/press-01/telemetry"
     assert settings.mqtt_host == "localhost"
     assert settings.mqtt_qos == 1
+    assert settings.mqtt_consumer_client_id == "smart-factory-consumer"
+    assert settings.mqtt_topic_filter == "factory/+/+/telemetry"
 
 
 def test_reads_optional_seed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,4 +49,11 @@ def test_rejects_non_positive_publish_interval(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("PUBLISH_INTERVAL_SECONDS", "0")
 
     with pytest.raises(ValueError):
+        Settings.from_env()
+
+
+def test_rejects_empty_topic_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MQTT_TOPIC_FILTER", " ")
+
+    with pytest.raises(ValueError, match="must not be empty"):
         Settings.from_env()

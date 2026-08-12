@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from smart_factory.domain.telemetry import Telemetry
+from smart_factory.domain.telemetry import Telemetry, TelemetryReading
 
 
 def valid_telemetry() -> dict[str, object]:
@@ -25,6 +25,21 @@ def test_serializes_expected_mqtt_payload() -> None:
         b'"temperature_c":68.4,"vibration_mm_s":2.7,"power_kw":17.3,'
         b'"production_rate":44}'
     )
+
+
+def test_v01_name_remains_compatible_and_payload_round_trips() -> None:
+    telemetry = Telemetry(**valid_telemetry())  # type: ignore[arg-type]
+
+    assert Telemetry is TelemetryReading
+    assert TelemetryReading.from_mqtt_payload(telemetry.to_mqtt_payload()) == telemetry
+
+
+def test_mqtt_payload_rejects_type_coercion() -> None:
+    payload = Telemetry(**valid_telemetry()).to_mqtt_payload()  # type: ignore[arg-type]
+    invalid = payload.replace(b'"power_kw":17.3', b'"power_kw":"17.3"')
+
+    with pytest.raises(ValidationError):
+        TelemetryReading.from_mqtt_payload(invalid)
 
 
 @pytest.mark.parametrize(

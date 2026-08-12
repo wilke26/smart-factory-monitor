@@ -14,6 +14,8 @@ def settings() -> Settings:
         mqtt_keepalive=60,
         mqtt_qos=1,
         mqtt_client_id="test-client",
+        mqtt_consumer_client_id="test-consumer",
+        mqtt_topic_filter="factory/+/+/telemetry",
         factory_area="hall-a",
         machine_id="press-01",
         publish_interval_seconds=0.01,

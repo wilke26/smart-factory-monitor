@@ -3,10 +3,10 @@
 import logging
 import signal
 import threading
-from time import sleep
 
 from smart_factory.config import Settings
 from smart_factory.infrastructure.mqtt.publisher import MqttPublisher
+from smart_factory.logging import configure_logging
 from smart_factory.simulator.machine import MachineSimulator
 
 LOGGER = logging.getLogger(__name__)
@@ -23,7 +23,10 @@ def run(settings: Settings, stop_event: threading.Event | None = None) -> None:
         keepalive=settings.mqtt_keepalive,
     )
 
-    LOGGER.info("Publishing %s telemetry to %s", settings.machine_id, settings.topic)
+    LOGGER.info(
+        "simulator_started",
+        extra={"machine_id": settings.machine_id, "topic": settings.topic},
+    )
     with publisher:
         while not should_stop.is_set():
             measurement = simulator.next_measurement()
@@ -32,21 +35,21 @@ def run(settings: Settings, stop_event: threading.Event | None = None) -> None:
                 measurement.to_mqtt_payload(),
                 qos=settings.mqtt_qos,
             )
-            LOGGER.info("Published: %s", measurement.model_dump_json())
+            LOGGER.info(
+                "telemetry_published",
+                extra={"machine_id": measurement.machine_id, "topic": settings.topic},
+            )
             should_stop.wait(settings.publish_interval_seconds)
 
 
 def main() -> None:
     settings = Settings.from_env()
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level, logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    configure_logging(settings.log_level)
     stop_event = threading.Event()
 
     def request_stop(signum: int, frame: object) -> None:
         del frame
-        LOGGER.info("Received signal %d; stopping", signum)
+        LOGGER.info("shutdown_requested", extra={"signal": signum})
         stop_event.set()
 
     signal.signal(signal.SIGTERM, request_stop)
@@ -57,8 +60,11 @@ def main() -> None:
         try:
             run(settings, stop_event)
         except (ConnectionError, OSError) as exc:
-            LOGGER.warning("MQTT unavailable (%s); retrying in %.0f seconds", exc, retry_delay)
-            sleep(retry_delay)
+            LOGGER.warning(
+                "mqtt_unavailable",
+                extra={"reason": str(exc), "retry_seconds": retry_delay},
+            )
+            stop_event.wait(retry_delay)
             retry_delay = min(retry_delay * 2, 30.0)
 
 

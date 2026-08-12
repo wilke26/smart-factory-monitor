@@ -35,6 +35,24 @@ services:
       SIMULATOR_SEED: ${SIMULATOR_SEED:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+  consumer:
+    build:
+      context: .
+    command: ["smart-factory-consumer"]
+    restart: unless-stopped
+    init: true
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: ${MQTT_HOST:-mosquitto}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_KEEPALIVE: ${MQTT_KEEPALIVE:-60}
+      MQTT_QOS: ${MQTT_QOS:-1}
+      MQTT_CONSUMER_CLIENT_ID: ${MQTT_CONSUMER_CLIENT_ID:-smart-factory-consumer}
+      MQTT_TOPIC_FILTER: ${MQTT_TOPIC_FILTER:-factory/+/+/telemetry}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
 volumes:
   mosquitto-data:
   mosquitto-log:

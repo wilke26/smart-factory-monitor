@@ -18,6 +18,8 @@ class Settings:
     mqtt_keepalive: int
     mqtt_qos: int
     mqtt_client_id: str
+    mqtt_consumer_client_id: str
+    mqtt_topic_filter: str
     factory_area: str
     machine_id: str
     publish_interval_seconds: float
@@ -34,12 +36,17 @@ class Settings:
         if interval <= 0:
             raise ValueError("PUBLISH_INTERVAL_SECONDS must be greater than zero")
         seed_text = os.getenv("SIMULATOR_SEED", "").strip()
+        topic_filter = os.getenv("MQTT_TOPIC_FILTER", "factory/+/+/telemetry").strip()
+        if not topic_filter:
+            raise ValueError("MQTT_TOPIC_FILTER must not be empty")
         return cls(
             mqtt_host=os.getenv("MQTT_HOST", "localhost"),
             mqtt_port=_required_range("MQTT_PORT", "1883", 1, 65535),
             mqtt_keepalive=_required_range("MQTT_KEEPALIVE", "60", 1, 65535),
             mqtt_qos=_required_range("MQTT_QOS", "1", 0, 2),
             mqtt_client_id=os.getenv("MQTT_CLIENT_ID", "smart-factory-simulator"),
+            mqtt_consumer_client_id=os.getenv("MQTT_CONSUMER_CLIENT_ID", "smart-factory-consumer"),
+            mqtt_topic_filter=topic_filter,
             factory_area=os.getenv("FACTORY_AREA", "hall-a"),
             machine_id=os.getenv("MACHINE_ID", "press-01"),
             publish_interval_seconds=interval,

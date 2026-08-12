@@ -42,6 +42,7 @@ class MqttPublisher:
         )
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
+        self._client.reconnect_delay_set(min_delay=1, max_delay=30)
 
     def connect(self) -> None:
         """Connect and wait until the broker acknowledges the session."""
@@ -93,9 +94,9 @@ class MqttPublisher:
         del client, userdata, flags, properties
         if reason_code.is_failure:
             self._connection_error = str(reason_code)
-            LOGGER.error("MQTT connection rejected: %s", reason_code)
+            LOGGER.error("mqtt_connect_failed", extra={"reason": str(reason_code)})
             return
-        LOGGER.info("Connected to MQTT broker at %s:%d", self._host, self._port)
+        LOGGER.info("mqtt_connected", extra={"host": self._host, "port": self._port})
         self._connected.set()
 
     def _on_disconnect(
@@ -109,4 +110,4 @@ class MqttPublisher:
         del client, userdata, disconnect_flags, properties
         self._connected.clear()
         if reason_code.is_failure:
-            LOGGER.warning("Unexpected MQTT disconnect: %s", reason_code)
+            LOGGER.warning("mqtt_disconnected", extra={"reason": str(reason_code)})

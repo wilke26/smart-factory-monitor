@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smart-factory-monitor"
-version = "0.1.0"
-description = "A production-minded MQTT machine telemetry simulator for a Smart Factory portfolio project."
+version = "0.2.0"
+description = "A production-minded MQTT telemetry pipeline for a Smart Factory portfolio project."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2,<2",
   "hypothesis>=6.112,<7",
   "mypy>=1.11,<2",
   "pytest>=8.3,<9",
@@ -26,6 +27,7 @@ dev = [
 
 [project.scripts]
 smart-factory-simulator = "smart_factory.main:main"
+smart-factory-consumer = "smart_factory.consumer_main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/smart_factory"]

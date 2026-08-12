@@ -1,50 +1,45 @@
-# Architecture v0.1
+# Architecture v0.2
 
 ## Scope
 
-Version 0.1 proves the smallest useful event-streaming slice: a simulated hydraulic press
-creates validated telemetry and publishes it via MQTT. Persistence, consuming services,
-anomaly detection, APIs and orchestration are deliberately deferred.
+Version 0.2 extends the publishing slice with a complete inbound flow. It consumes MQTT
+telemetry, validates the untrusted boundary, and invokes an in-memory application use
+case. Persistence, APIs, and anomaly detection remain deferred.
 
 ```text
-MachineSimulator
-      │ creates Telemetry (Pydantic v2)
-      ▼
-MqttPublisher
-      │ QoS 1 / MQTT 5
-      ▼
-Eclipse Mosquitto
-      │
-      ▼
-factory/hall-a/press-01/telemetry
+domain.TelemetryReading
+      ▲              ▲
+      │              │
+simulator       application.TelemetryApplicationService
+      │              ▲ implements TelemetryHandler
+      ▼              │
+MqttPublisher   MqttTelemetryConsumer
+      │              ▲
+      └──► Mosquitto ─┘
 ```
 
-## Package boundaries
+## Dependency direction
 
-- `domain`: external data contract without MQTT or simulator dependencies.
-- `simulator`: plausible normal-operation measurements.
-- `infrastructure.mqtt`: Paho-specific broker adapter.
-- `config`: validated environment-to-runtime configuration.
-- `main`: composition, process lifecycle and retry policy.
+- `domain` owns the strict Pydantic v2 data contract.
+- `application` accepts only `TelemetryReading` through a small inbound protocol and
+  knows nothing about MQTT, topics, payload bytes, or Paho.
+- `infrastructure.mqtt` owns connections, subscriptions, topic interpretation, JSON
+  validation, rejection behavior, and transport logging.
+- `main` and `consumer_main` are the two composition roots.
 
-The dependency direction points toward the contract: infrastructure and simulation depend
-on `domain`, while `domain` depends only on Pydantic.
+The consumer rejects invalid JSON/UTF-8, invalid schemas, malformed telemetry topics,
+and payload/topic machine-ID mismatches. Expected input failures do not stop the MQTT
+network loop. Unexpected application failures are logged and isolated. Raw payloads are
+not logged.
 
 ## Reliability characteristics
 
-- QoS 1 requests at-least-once delivery between publisher and broker.
-- The process handles `SIGTERM`/`SIGINT` and closes its MQTT session.
-- Initial broker failures use bounded exponential retry.
+- QoS 1 requests at-least-once delivery; later stateful consumers must be idempotent.
+- Both processes handle `SIGTERM`/`SIGINT` and close their MQTT sessions.
+- Broker failures use bounded retry delays.
+- Stable client IDs and Paho reconnect backoff support reconnection.
 - Mosquitto persists broker state in a named volume.
-- The contract rejects unknown fields, impossible ranges and timezone-naive timestamps.
+- Compose waits for broker health before starting both clients.
 
-These are useful foundations, not a production guarantee. Authentication, TLS, secrets,
-consumer idempotency, dead-letter handling and observability remain future work.
-
-## Planned evolution
-
-1. v0.2: MQTT consumer and contract validation at ingestion.
-2. v0.3: PostgreSQL/TimescaleDB and a read API.
-3. v0.4: transparent rule-based anomaly detection.
-4. v0.5: multivariate anomaly detection where rules are insufficient.
-5. v0.6: production-oriented observability and deployment hardening.
+These remain development foundations. Authentication, TLS, per-topic authorization,
+dead-letter handling, metrics, and production deployment are future work.
