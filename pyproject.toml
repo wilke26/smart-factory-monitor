@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smart-factory-monitor"
-version = "0.4.1"
-description = "A production-minded Smart Factory telemetry pipeline with explainable rule-based anomaly detection."
+version = "0.5.0"
+description = "A Smart Factory telemetry pipeline with explainable rule-based and multivariate ML anomaly detection."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
@@ -17,18 +17,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ml = [
+  "joblib>=1.4,<2",
+  "scikit-learn>=1.5,<2",
+]
 dev = [
   "build>=1.2,<2",
   "hypothesis>=6.112,<7",
+  "joblib>=1.4,<2",
   "mypy>=1.11,<2",
   "pytest>=8.3,<9",
   "pytest-cov>=5,<7",
   "ruff>=0.6,<1",
+  "scikit-learn>=1.5,<2",
 ]
 
 [project.scripts]
 smart-factory-simulator = "smart_factory.main:main"
 smart-factory-consumer = "smart_factory.consumer_main:main"
+smart-factory-train-model = "smart_factory.train_model_main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/smart_factory"]
@@ -59,5 +66,5 @@ packages = ["smart_factory"]
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["paho.*", "psycopg_pool.*"]
+module = ["joblib.*", "paho.*", "psycopg_pool.*", "sklearn.*"]
 ignore_missing_imports = true

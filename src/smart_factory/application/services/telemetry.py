@@ -3,9 +3,9 @@
 import logging
 from collections.abc import Callable
 
+from smart_factory.application.ports.anomaly import AnomalyDetector
 from smart_factory.application.ports.telemetry import TelemetryRepository
 from smart_factory.domain.anomaly import AnomalyFinding
-from smart_factory.domain.services.anomaly_detection import RuleBasedAnomalyDetector
 from smart_factory.domain.telemetry import TelemetryReading
 
 
@@ -16,7 +16,7 @@ class TelemetryApplicationService:
         self,
         *,
         repository: TelemetryRepository,
-        anomaly_detector: RuleBasedAnomalyDetector,
+        anomaly_detector: AnomalyDetector,
         on_processed: Callable[[TelemetryReading], None] | None = None,
         logger: logging.Logger | None = None,
     ) -> None:

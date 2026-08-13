@@ -1,6 +1,6 @@
 import pytest
 
-from smart_factory.config import Settings
+from smart_factory.config import MlSettings, Settings
 
 
 def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,3 +112,39 @@ def test_rejects_thresholds_outside_contract_bounds(
 
     with pytest.raises(ValueError, match="must be between"):
         Settings.from_env()
+
+
+def test_ml_defaults_to_explicitly_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "ML_ANOMALY_DETECTION_ENABLED",
+        "ML_MODEL_PATH",
+        "ML_MACHINE_ID",
+        "ML_CONTAMINATION",
+        "ML_MINIMUM_TRAINING_SAMPLES",
+        "ML_TRAINING_LIMIT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = MlSettings.from_env()
+
+    assert settings.enabled is False
+    assert settings.contamination == 0.05
+    assert settings.machine_id == "press-01"
+    assert settings.minimum_training_samples == 100
+    assert settings.training_limit == 10_000
+
+
+@pytest.mark.parametrize("value", ["maybe", "enabled"])
+def test_rejects_invalid_ml_boolean(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("ML_ANOMALY_DETECTION_ENABLED", value)
+
+    with pytest.raises(ValueError, match="must be a boolean"):
+        MlSettings.from_env()
+
+
+def test_rejects_training_limit_below_minimum(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ML_MINIMUM_TRAINING_SAMPLES", "200")
+    monkeypatch.setenv("ML_TRAINING_LIMIT", "100")
+
+    with pytest.raises(ValueError, match="must not be below"):
+        MlSettings.from_env()

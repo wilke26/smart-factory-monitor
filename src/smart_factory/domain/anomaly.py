@@ -1,4 +1,4 @@
-"""Explainable anomaly findings produced from validated telemetry."""
+"""Anomaly findings produced from validated telemetry."""
 
 from enum import StrEnum
 from typing import Annotated
@@ -7,14 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AnomalySeverity(StrEnum):
-    """Operational priority assigned by a deterministic rule."""
+    """Operational priority assigned to a detector finding."""
 
     MEDIUM = "medium"
     HIGH = "high"
 
 
 class AnomalyFinding(BaseModel):
-    """One immutable explanation of a violated telemetry rule."""
+    """One immutable detector result with persisted decision evidence."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 

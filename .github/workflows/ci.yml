@@ -46,14 +46,17 @@ jobs:
       - name: Validate Docker Compose configuration
         run: docker compose config --quiet
       - name: Build application images
-        run: docker compose build simulator consumer
-      - name: Start and verify database schema
+        run: docker compose build simulator consumer model-trainer
+      - name: Start database and train an ML artifact
         run: |
           docker compose up -d --wait timescaledb
           docker compose run --rm schema-migrate
           docker compose exec -T timescaledb psql \
             -U smart_factory -d smart_factory -v ON_ERROR_STOP=1 \
-            -c "SELECT 1 FROM anomaly_findings LIMIT 1;"
+            -c "INSERT INTO telemetry_readings (machine_id, recorded_at, temperature_c, vibration_mm_s, power_kw, production_rate) SELECT 'press-01', NOW() - number * INTERVAL '1 second', 68 + (number % 5) * 0.1, 2.5 + (number % 7) * 0.02, 17 + (number % 3) * 0.1, 44 + (number % 2) FROM generate_series(1, 120) AS number;"
+          docker compose --profile tools run --rm model-trainer
+          docker compose run --rm --no-deps consumer python -c \
+            "from pathlib import Path; from smart_factory.infrastructure.ml.isolation_forest import IsolationForestAnomalyDetector; IsolationForestAnomalyDetector.load(Path('/models/isolation-forest.joblib'))"
       - name: Stop Compose services
         if: always()
         run: docker compose down -v

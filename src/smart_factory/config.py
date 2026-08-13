@@ -29,6 +29,45 @@ def _optional_integer(name: str) -> int | None:
         raise ValueError(f"{name} must be an integer") from error
 
 
+def _required_boolean(name: str, default: str) -> bool:
+    text = os.getenv(name, default).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean")
+
+
+@dataclass(frozen=True, slots=True)
+class MlSettings:
+    """Configuration shared by offline training and optional online inference."""
+
+    enabled: bool
+    model_path: str
+    machine_id: str
+    contamination: float
+    minimum_training_samples: int
+    training_limit: int
+
+    @classmethod
+    def from_env(cls) -> "MlSettings":
+        minimum_samples = _required_range("ML_MINIMUM_TRAINING_SAMPLES", "100", 20, 100_000)
+        training_limit = _required_range("ML_TRAINING_LIMIT", "10000", 20, 1_000_000)
+        if training_limit < minimum_samples:
+            raise ValueError("ML_TRAINING_LIMIT must not be below ML_MINIMUM_TRAINING_SAMPLES")
+        model_path = os.getenv("ML_MODEL_PATH", "/models/isolation-forest.joblib").strip()
+        if not model_path:
+            raise ValueError("ML_MODEL_PATH must not be empty")
+        return cls(
+            enabled=_required_boolean("ML_ANOMALY_DETECTION_ENABLED", "false"),
+            model_path=model_path,
+            machine_id=os.getenv("ML_MACHINE_ID", os.getenv("MACHINE_ID", "press-01")),
+            contamination=_required_float_range("ML_CONTAMINATION", "0.05", 0.001, 0.5),
+            minimum_training_samples=minimum_samples,
+            training_limit=training_limit,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     mqtt_host: str

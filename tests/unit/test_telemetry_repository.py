@@ -6,6 +6,7 @@ from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.database.telemetry_repository import (
     INSERT_ANOMALY,
     INSERT_TELEMETRY,
+    SELECT_RECENT_TELEMETRY,
     PsycopgTelemetryRepository,
 )
 
@@ -106,3 +107,25 @@ def test_duplicate_is_idempotent() -> None:
     repository, _ = repository_with_pool(rowcount=0)
 
     assert repository.save(reading(), (finding(),)) is False
+
+
+def test_loads_recent_readings_for_training() -> None:
+    repository, pool = repository_with_pool()
+    measurement = reading()
+    connection = pool.connection.return_value.__enter__.return_value
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = [
+        (
+            measurement.machine_id,
+            measurement.timestamp,
+            measurement.temperature_c,
+            measurement.vibration_mm_s,
+            measurement.power_kw,
+            measurement.production_rate,
+        )
+    ]
+
+    result = repository.load_recent_readings("press-01", 500)
+
+    cursor.execute.assert_called_once_with(SELECT_RECENT_TELEMETRY, ("press-01", 500))
+    assert result == [measurement]

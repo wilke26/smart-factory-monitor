@@ -1,12 +1,12 @@
 # Smart Factory Monitor
 
-Version **0.4.1** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.5** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
-detects explainable rule violations, and atomically persists readings plus findings in
-TimescaleDB through a transport-independent application service.
+combines deterministic rules with optional multivariate Isolation Forest inference, and
+atomically persists readings plus findings in TimescaleDB.
 
-There is intentionally no HTTP API or ML yet.
+There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
 ## Quick start
 
@@ -20,7 +20,10 @@ This starts:
 - `timescaledb`: PostgreSQL 16 with the TimescaleDB extension on `localhost:5432`;
 - `simulator`: publishes to `factory/hall-a/press-01/telemetry`;
 - `schema-migrate`: applies the idempotent v0.4 anomaly schema and exits successfully;
-- `consumer`: validates messages, evaluates rules, and stores readings and findings.
+- `consumer`: validates messages, evaluates enabled detectors, and stores results.
+
+ML is disabled by default until a machine-specific model has been trained. Known safety
+rules are always active.
 
 The application logs are newline-delimited JSON. Look for `telemetry_published`,
 `telemetry_accepted`, `telemetry_processed`, and `anomaly_detected` events.
@@ -66,7 +69,9 @@ MqttPublisher ── factory/<area>/<machine>/telemetry ──► Mosquitto
                                                             ▼
                                               TelemetryApplicationService
                                                             │
-                                             RuleBasedAnomalyDetector
+                                            CompositeAnomalyDetector
+                                             ├── deterministic rules
+                                             └── optional Isolation Forest
                                                             │ TelemetryRepository
                                                             ▼
                                              PsycopgTelemetryRepository
@@ -107,6 +112,28 @@ MQTT acknowledgements are manual. Valid readings are acknowledged only after the
 database transaction succeeds. Invalid input is acknowledged and discarded so poison
 messages do not loop. The `(machine_id, recorded_at)` primary key and `ON CONFLICT DO
 NOTHING` make QoS 1 redelivery idempotent.
+
+## Multivariate ML anomaly detection
+
+The Isolation Forest complements rules by detecting unusual combinations across all
+four numeric telemetry features. Training is an explicit offline operation over recent
+readings from one machine; the live consumer never retrains a model.
+
+After at least 100 readings for `press-01` have been collected:
+
+```bash
+docker compose --profile tools run --rm model-trainer
+ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
+```
+
+The trainer writes a versioned artifact to the shared `ml-models` volume using an atomic
+replace. With ML enabled, the consumer validates the artifact format, feature order,
+machine identity, estimator type, and exact scikit-learn runtime version before serving.
+An enabled consumer does not silently fall back if the artifact is missing or invalid.
+
+The artifact uses joblib/pickle semantics. Only load artifacts produced by this project
+and stored in the trusted local model volume. Model promotion, signing, evaluation
+datasets, drift monitoring, and a registry remain production-hardening work.
 
 ## Telemetry contract
 
@@ -151,6 +178,12 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `ANOMALY_MAX_VIBRATION_MM_S` | `7.0` | High-vibration threshold |
 | `ANOMALY_MAX_POWER_KW` | `30.0` | High-power threshold |
 | `ANOMALY_MIN_PRODUCTION_RATE` | `25` | Low-production threshold |
+| `ML_ANOMALY_DETECTION_ENABLED` | `false` | Enable model loading and inference |
+| `ML_MODEL_PATH` | `/models/isolation-forest.joblib` | Trusted model artifact path |
+| `ML_MACHINE_ID` | `press-01` | Machine used for training and inference |
+| `ML_CONTAMINATION` | `0.05` | Expected anomaly fraction during training |
+| `ML_MINIMUM_TRAINING_SAMPLES` | `100` | Minimum history required to train |
+| `ML_TRAINING_LIMIT` | `10000` | Maximum recent readings loaded for training |
 
 > The local Mosquitto configuration permits anonymous, unencrypted access. Do not expose
 > port 1883 to an untrusted network.
@@ -172,9 +205,10 @@ docker compose config --quiet
 ```
 
 Tests cover the contract, configuration, application service, logging, MQTT callbacks,
-valid/invalid ingestion pipelines, rule boundaries and multi-rule findings, atomic
-idempotent persistence, and property-based JSON round trips. CI checks Python 3.12 and
-3.13 and enforces at least 80% branch-aware coverage.
+valid/invalid ingestion pipelines, rule boundaries, model training/inference and artifact
+validation, atomic idempotent persistence, and property-based JSON round trips. CI checks
+Python 3.12 and 3.13, trains and reloads a model in Docker, and enforces at least 80%
+branch-aware coverage.
 
 Run the services outside Docker with a reachable broker:
 
@@ -193,7 +227,8 @@ MQTT_HOST=localhost smart-factory-simulator
 - [ADR 0003: MQTT/application separation](docs/adr/0003-separate-mqtt-adapter-from-application-service.md)
 - [ADR 0004: TimescaleDB persistence](docs/adr/0004-timescaledb-telemetry-persistence.md)
 - [ADR 0005: deterministic rules](docs/adr/0005-rule-based-anomaly-detection.md)
+- [ADR 0006: offline Isolation Forest](docs/adr/0006-offline-isolation-forest.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-v0.5 can add multivariate ML anomaly detection alongside these transparent rules where
-individual thresholds are insufficient.
+v0.6 can add metrics, alert routing, dependency scanning, TLS/secrets, model evaluation,
+drift monitoring, and production deployment hardening.

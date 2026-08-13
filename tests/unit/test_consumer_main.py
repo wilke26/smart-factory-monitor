@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 from psycopg_pool import PoolTimeout
 
 import smart_factory.consumer_main as consumer_main
-from smart_factory.config import Settings
-from smart_factory.consumer_main import run
+from smart_factory.config import MlSettings, Settings
+from smart_factory.consumer_main import build_anomaly_detector, run
 
 
 def settings() -> Settings:
@@ -31,6 +31,17 @@ def settings() -> Settings:
         maximum_vibration_mm_s=7,
         maximum_power_kw=30,
         minimum_production_rate=25,
+    )
+
+
+def ml_settings(*, enabled: bool = False) -> MlSettings:
+    return MlSettings(
+        enabled=enabled,
+        model_path="/models/model.joblib",
+        machine_id="press-01",
+        contamination=0.05,
+        minimum_training_samples=100,
+        training_limit=10_000,
     )
 
 
@@ -78,3 +89,21 @@ def test_main_retries_database_startup_timeout() -> None:
     stop_event.wait.assert_called_once_with(1.0)
     assert logger.warning.call_args.args[0] == "service_unavailable"
     assert logger.warning.call_args.kwargs["extra"]["retry_seconds"] == 1.0
+
+
+def test_rule_detector_remains_available_when_ml_is_disabled() -> None:
+    detector = build_anomaly_detector(settings(), ml_settings())
+
+    assert (
+        detector.evaluate(Mock(temperature_c=70, vibration_mm_s=2, power_kw=15, production_rate=40))
+        == ()
+    )
+
+
+@patch("smart_factory.infrastructure.ml.isolation_forest.IsolationForestAnomalyDetector.load")
+def test_loads_ml_model_only_when_enabled(load: Mock) -> None:
+    load.return_value.evaluate.return_value = ()
+
+    build_anomaly_detector(settings(), ml_settings(enabled=True))
+
+    load.assert_called_once()

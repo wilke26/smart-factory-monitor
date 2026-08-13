@@ -6,8 +6,10 @@ import threading
 
 from psycopg import OperationalError
 
+from smart_factory.application.ports.anomaly import AnomalyDetector
+from smart_factory.application.services.anomaly_detection import CompositeAnomalyDetector
 from smart_factory.application.services.telemetry import TelemetryApplicationService
-from smart_factory.config import Settings
+from smart_factory.config import MlSettings, Settings
 from smart_factory.domain.services.anomaly_detection import (
     AnomalyThresholds,
     RuleBasedAnomalyDetector,
@@ -19,20 +21,42 @@ from smart_factory.logging import configure_logging
 LOGGER = logging.getLogger(__name__)
 
 
-def run(settings: Settings, stop_event: threading.Event) -> None:
+def build_anomaly_detector(
+    settings: Settings,
+    ml_settings: MlSettings,
+) -> CompositeAnomalyDetector:
+    detectors: list[AnomalyDetector] = [
+        RuleBasedAnomalyDetector(
+            AnomalyThresholds(
+                maximum_temperature_c=settings.maximum_temperature_c,
+                maximum_vibration_mm_s=settings.maximum_vibration_mm_s,
+                maximum_power_kw=settings.maximum_power_kw,
+                minimum_production_rate=settings.minimum_production_rate,
+            )
+        )
+    ]
+    if ml_settings.enabled:
+        from pathlib import Path
+
+        from smart_factory.infrastructure.ml.isolation_forest import (
+            IsolationForestAnomalyDetector,
+        )
+
+        detectors.append(IsolationForestAnomalyDetector.load(Path(ml_settings.model_path)))
+    return CompositeAnomalyDetector(tuple(detectors))
+
+
+def run(
+    settings: Settings,
+    stop_event: threading.Event,
+    ml_settings: MlSettings | None = None,
+) -> None:
     """Consume telemetry until a termination signal is received."""
+    detector = build_anomaly_detector(settings, ml_settings or MlSettings.from_env())
     repository = PsycopgTelemetryRepository(
         settings.database_url,
         min_size=settings.database_pool_min_size,
         max_size=settings.database_pool_max_size,
-    )
-    detector = RuleBasedAnomalyDetector(
-        AnomalyThresholds(
-            maximum_temperature_c=settings.maximum_temperature_c,
-            maximum_vibration_mm_s=settings.maximum_vibration_mm_s,
-            maximum_power_kw=settings.maximum_power_kw,
-            minimum_production_rate=settings.minimum_production_rate,
-        )
     )
     service = TelemetryApplicationService(repository=repository, anomaly_detector=detector)
     consumer = MqttTelemetryConsumer(

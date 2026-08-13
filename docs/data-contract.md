@@ -41,3 +41,7 @@ require a versioned contract/topic decision before producers and consumers chang
 The database adds `ingested_at`. `(machine_id, recorded_at)` is the idempotency key.
 Anomaly findings reference that same key; their evidence contract is documented in
 [anomaly-detection.md](anomaly-detection.md).
+
+The ML feature contract uses the four numeric fields in the table order shown above and
+does not include identifiers or timestamps. A model artifact is bound separately to one
+`machine_id`; changing feature meaning or order requires a new artifact format.

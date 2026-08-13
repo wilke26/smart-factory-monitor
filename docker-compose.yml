@@ -86,6 +86,8 @@ services:
   consumer:
     build:
       context: .
+      args:
+        PROJECT_INSTALL: ".[ml]"
     command: ["smart-factory-consumer"]
     restart: unless-stopped
     init: true
@@ -112,8 +114,41 @@ services:
       ANOMALY_MAX_VIBRATION_MM_S: ${ANOMALY_MAX_VIBRATION_MM_S:-7.0}
       ANOMALY_MAX_POWER_KW: ${ANOMALY_MAX_POWER_KW:-30.0}
       ANOMALY_MIN_PRODUCTION_RATE: ${ANOMALY_MIN_PRODUCTION_RATE:-25}
+      ML_ANOMALY_DETECTION_ENABLED: ${ML_ANOMALY_DETECTION_ENABLED:-false}
+      ML_MODEL_PATH: ${ML_MODEL_PATH:-/models/isolation-forest.joblib}
+      ML_MACHINE_ID: ${ML_MACHINE_ID:-press-01}
+      ML_CONTAMINATION: ${ML_CONTAMINATION:-0.05}
+      ML_MINIMUM_TRAINING_SAMPLES: ${ML_MINIMUM_TRAINING_SAMPLES:-100}
+      ML_TRAINING_LIMIT: ${ML_TRAINING_LIMIT:-10000}
+    volumes:
+      - ml-models:/models:ro
+
+  model-trainer:
+    build:
+      context: .
+      args:
+        PROJECT_INSTALL: ".[ml]"
+    command: ["smart-factory-train-model"]
+    profiles: ["tools"]
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://smart_factory:smart_factory_dev@timescaledb:5432/smart_factory}
+      DATABASE_POOL_MIN_SIZE: ${DATABASE_POOL_MIN_SIZE:-1}
+      DATABASE_POOL_MAX_SIZE: ${DATABASE_POOL_MAX_SIZE:-4}
+      DATABASE_CONNECT_TIMEOUT_SECONDS: ${DATABASE_CONNECT_TIMEOUT_SECONDS:-10.0}
+      ML_MODEL_PATH: ${ML_MODEL_PATH:-/models/isolation-forest.joblib}
+      ML_MACHINE_ID: ${ML_MACHINE_ID:-press-01}
+      ML_CONTAMINATION: ${ML_CONTAMINATION:-0.05}
+      ML_MINIMUM_TRAINING_SAMPLES: ${ML_MINIMUM_TRAINING_SAMPLES:-100}
+      ML_TRAINING_LIMIT: ${ML_TRAINING_LIMIT:-10000}
+    volumes:
+      - ml-models:/models
 
 volumes:
   mosquitto-data:
   mosquitto-log:
   timescaledb-data:
+  ml-models:

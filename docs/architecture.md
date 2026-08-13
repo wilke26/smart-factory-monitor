@@ -1,60 +1,57 @@
-# Architecture v0.4
+# Architecture v0.5
 
 ## Scope
 
-Version 0.4 adds deterministic anomaly detection and durable findings to the v0.3
-telemetry path. It stops before APIs and machine learning.
+Version 0.5 adds offline-trained, multivariate anomaly inference alongside the v0.4
+deterministic rules. It deliberately excludes online learning, an HTTP API, automatic
+model promotion, and production model operations.
 
 ```text
-MQTT → validation → TelemetryApplicationService
-                            │
-                            ├── RuleBasedAnomalyDetector → AnomalyFinding(s)
-                            │
-                            └── TelemetryRepository port
-                                        │ one transaction
-                                        ▼
-                              telemetry_readings
-                              anomaly_findings
+Offline path                         Online path
+telemetry_readings                   MQTT → validation → application service
+        │                                                │
+        ▼                                                ▼
+model-trainer → trusted artifact     CompositeAnomalyDetector
+                     │                ├── rules (always)
+                     └───────────────►└── Isolation Forest (opt-in)
+                                                       │
+                                                       ▼ one transaction
+                                      telemetry_readings + anomaly_findings
 ```
 
 ## Dependency direction
 
-- `domain` owns `TelemetryReading`, `AnomalyFinding`, severities, thresholds, and the
-  pure rule evaluator.
-- `application` orchestrates detection and persistence through ports. It knows no MQTT,
-  Psycopg, or SQL.
-- `infrastructure.mqtt` converts untrusted payloads into validated application input.
-- `infrastructure.database` atomically stores a reading and all its findings.
-- `consumer_main` supplies configured thresholds and composes the adapters.
+- `domain` owns validated telemetry, finding contracts, and deterministic rules.
+- `application` owns the technology-neutral `AnomalyDetector` port, detector composition,
+  processing orchestration, and persistence ports.
+- `infrastructure.ml` owns scikit-learn training, artifact I/O, and inference.
+- `infrastructure.database` supplies both atomic persistence and bounded historical reads.
+- `consumer_main` and `train_model_main` are separate composition roots.
 
-The detector has no I/O and evaluates all rules so simultaneous symptoms remain
-visible. Findings contain enough evidence to explain every decision without re-running
-the current configuration.
+The real-time application service sees only the detector protocol. It neither imports
+scikit-learn nor decides whether ML is enabled.
 
-## Persistence and idempotency
+## Model lifecycle boundary
 
-`telemetry_readings` remains a TimescaleDB hypertable. `anomaly_findings` references a
-reading through `(machine_id, recorded_at)` and uses
-`(machine_id, recorded_at, rule_id)` as its primary key. Reading and findings share the
-same Psycopg transaction. QoS 1 redelivery therefore neither loses the relationship nor
-duplicates findings.
+Training reads a bounded window for one machine and uses a fixed random seed. It writes
+the artifact atomically, but does not promote or activate it. Operators explicitly
+restart the consumer with ML enabled after training. The consumer fails closed on a
+missing or incompatible enabled model rather than silently changing detection behavior.
 
-The idempotent `schema-migrate` Compose service applies the anomaly table to both fresh
-databases and retained v0.3 volumes before the consumer starts. This is deliberately a
-small release migration; a versioned migration framework is still required before
-multiple evolving production environments exist.
+The artifact validates format version, exact feature order, target machine, estimator
+type, and scikit-learn version. Because joblib has pickle semantics, the model volume is
+a trust boundary and must not accept untrusted uploads.
 
-## Delivery and failure semantics
+## Delivery and persistence semantics
 
-- Valid input is acknowledged only after detection and the database transaction finish.
-- Invalid input is logged, acknowledged, and discarded.
-- Detection or persistence failure leaves the MQTT message unacknowledged.
-- Rule thresholds are validated against the outer telemetry contract bounds.
-- Structured anomaly logs include evidence, not raw payloads.
+Rules and ML are evaluated before the existing TimescaleDB transaction. Every finding
+uses the same `(machine_id, recorded_at, rule_id)` idempotency key as v0.4. A processing,
+inference, or persistence failure leaves the QoS 1 message unacknowledged. Invalid input
+is acknowledged and discarded.
 
 ## Operational boundaries
 
-The rules are known-condition monitoring, not prediction. They do not learn baselines,
-correlations, drift, or machine-specific behavior. Local credentials and published
-ports remain development conveniences. Production still requires secrets, TLS,
-authorization, backups, migration tracking, metrics, and alert routing.
+Isolation Forest detects statistical rarity, not equipment failure and not causality.
+Training data quality, hold-out evaluation, drift, model approval, registry/signing,
+metrics, alerts, secrets, TLS, backups, and deployment automation remain explicit v0.6+
+work.

@@ -37,6 +37,20 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (machine_id, recorded_at, rule_id) DO NOTHING
 """
 
+SELECT_RECENT_TELEMETRY = """
+SELECT
+    machine_id,
+    recorded_at,
+    temperature_c,
+    vibration_mm_s,
+    power_kw,
+    production_rate
+FROM telemetry_readings
+WHERE machine_id = %s
+ORDER BY recorded_at DESC
+LIMIT %s
+"""
+
 
 class CursorLike(Protocol):
     rowcount: int
@@ -44,6 +58,8 @@ class CursorLike(Protocol):
     def execute(self, query: str, params: tuple[object, ...]) -> CursorLike: ...
 
     def executemany(self, query: str, params_seq: list[tuple[object, ...]]) -> None: ...
+
+    def fetchall(self) -> list[tuple[object, ...]]: ...
 
 
 class ConnectionLike(Protocol):
@@ -132,3 +148,20 @@ class PsycopgTelemetryRepository:
                     ],
                 )
         return inserted
+
+    def load_recent_readings(self, machine_id: str, limit: int) -> list[TelemetryReading]:
+        """Load bounded historical training data without leaking SQL to the trainer."""
+        with self._pool.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(SELECT_RECENT_TELEMETRY, (machine_id, limit))
+            rows = cursor.fetchall()
+        return [
+            TelemetryReading(
+                machine_id=cast(str, row[0]),
+                timestamp=cast(Any, row[1]),
+                temperature_c=cast(float, row[2]),
+                vibration_mm_s=cast(float, row[3]),
+                power_kw=cast(float, row[4]),
+                production_rate=cast(int, row[5]),
+            )
+            for row in rows
+        ]
