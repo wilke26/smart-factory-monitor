@@ -39,3 +39,5 @@ require a versioned contract/topic decision before producers and consumers chang
 | `production_rate` | `production_rate` |
 
 The database adds `ingested_at`. `(machine_id, recorded_at)` is the idempotency key.
+Anomaly findings reference that same key; their evidence contract is documented in
+[anomaly-detection.md](anomaly-detection.md).

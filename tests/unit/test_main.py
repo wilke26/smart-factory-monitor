@@ -25,6 +25,10 @@ def settings() -> Settings:
         database_pool_min_size=1,
         database_pool_max_size=4,
         database_connect_timeout_seconds=10,
+        maximum_temperature_c=90,
+        maximum_vibration_mm_s=7,
+        maximum_power_kw=30,
+        minimum_production_rate=25,
     )
 
 

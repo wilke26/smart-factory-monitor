@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from smart_factory.application.services.telemetry import TelemetryApplicationService
+from smart_factory.domain.services.anomaly_detection import RuleBasedAnomalyDetector
 from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.mqtt.consumer import MqttTelemetryConsumer
 
@@ -20,7 +21,10 @@ def test_valid_mqtt_message_reaches_application_service(valid_payload: bytes) ->
     repository = Mock()
     repository.save.return_value = True
     service = TelemetryApplicationService(
-        repository=repository, on_processed=processed.append, logger=Mock()
+        repository=repository,
+        anomaly_detector=RuleBasedAnomalyDetector(),
+        on_processed=processed.append,
+        logger=Mock(),
     )
     adapter = MqttTelemetryConsumer(
         "broker", 1883, "consumer", "factory/+/+/telemetry", service, logger=Mock()
@@ -32,14 +36,17 @@ def test_valid_mqtt_message_reaches_application_service(valid_payload: bytes) ->
 
     assert len(processed) == 1
     assert processed[0].machine_id == "press-01"
-    repository.save.assert_called_once_with(processed[0])
+    repository.save.assert_called_once_with(processed[0], ())
     client.ack.assert_called_once_with(7, 1)
 
 
 def test_invalid_mqtt_message_is_stopped_at_adapter() -> None:
     processed: list[TelemetryReading] = []
     service = TelemetryApplicationService(
-        repository=Mock(), on_processed=processed.append, logger=Mock()
+        repository=Mock(),
+        anomaly_detector=RuleBasedAnomalyDetector(),
+        on_processed=processed.append,
+        logger=Mock(),
     )
     logger = Mock()
     adapter = MqttTelemetryConsumer(

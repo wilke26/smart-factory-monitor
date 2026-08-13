@@ -6,6 +6,10 @@ import threading
 
 from smart_factory.application.services.telemetry import TelemetryApplicationService
 from smart_factory.config import Settings
+from smart_factory.domain.services.anomaly_detection import (
+    AnomalyThresholds,
+    RuleBasedAnomalyDetector,
+)
 from smart_factory.infrastructure.database.telemetry_repository import PsycopgTelemetryRepository
 from smart_factory.infrastructure.mqtt.consumer import MqttTelemetryConsumer
 from smart_factory.logging import configure_logging
@@ -20,7 +24,15 @@ def run(settings: Settings, stop_event: threading.Event) -> None:
         min_size=settings.database_pool_min_size,
         max_size=settings.database_pool_max_size,
     )
-    service = TelemetryApplicationService(repository=repository)
+    detector = RuleBasedAnomalyDetector(
+        AnomalyThresholds(
+            maximum_temperature_c=settings.maximum_temperature_c,
+            maximum_vibration_mm_s=settings.maximum_vibration_mm_s,
+            maximum_power_kw=settings.maximum_power_kw,
+            minimum_production_rate=settings.minimum_production_rate,
+        )
+    )
+    service = TelemetryApplicationService(repository=repository, anomaly_detector=detector)
     consumer = MqttTelemetryConsumer(
         settings.mqtt_host,
         settings.mqtt_port,

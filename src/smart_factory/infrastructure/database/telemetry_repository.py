@@ -1,8 +1,11 @@
 """Psycopg implementation of durable telemetry storage."""
 
+from __future__ import annotations
+
 from contextlib import AbstractContextManager
 from typing import Any, Protocol, cast
 
+from smart_factory.domain.anomaly import AnomalyFinding
 from smart_factory.domain.telemetry import TelemetryReading
 
 INSERT_TELEMETRY = """
@@ -18,13 +21,33 @@ VALUES (%s, %s, %s, %s, %s, %s)
 ON CONFLICT (machine_id, recorded_at) DO NOTHING
 """
 
+INSERT_ANOMALY = """
+INSERT INTO anomaly_findings (
+    machine_id,
+    recorded_at,
+    rule_id,
+    severity,
+    metric,
+    observed_value,
+    threshold,
+    comparison,
+    message
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (machine_id, recorded_at, rule_id) DO NOTHING
+"""
+
 
 class CursorLike(Protocol):
     rowcount: int
 
+    def execute(self, query: str, params: tuple[object, ...]) -> CursorLike: ...
+
+    def executemany(self, query: str, params_seq: list[tuple[object, ...]]) -> None: ...
+
 
 class ConnectionLike(Protocol):
-    def execute(self, query: str, params: tuple[object, ...]) -> CursorLike: ...
+    def cursor(self) -> AbstractContextManager[CursorLike]: ...
 
 
 class ConnectionPoolLike(Protocol):
@@ -73,8 +96,12 @@ class PsycopgTelemetryRepository:
     def close(self) -> None:
         self._pool.close()
 
-    def save(self, reading: TelemetryReading) -> bool:
-        """Insert once using the natural machine/timestamp identity."""
+    def save(
+        self,
+        reading: TelemetryReading,
+        findings: tuple[AnomalyFinding, ...],
+    ) -> bool:
+        """Atomically insert a reading and its explainable anomaly findings."""
         parameters: tuple[object, ...] = (
             reading.machine_id,
             reading.timestamp,
@@ -83,6 +110,25 @@ class PsycopgTelemetryRepository:
             reading.power_kw,
             reading.production_rate,
         )
-        with self._pool.connection() as connection:
-            cursor = connection.execute(INSERT_TELEMETRY, parameters)
-        return cursor.rowcount == 1
+        with self._pool.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(INSERT_TELEMETRY, parameters)
+            inserted = cursor.rowcount == 1
+            if findings:
+                cursor.executemany(
+                    INSERT_ANOMALY,
+                    [
+                        (
+                            reading.machine_id,
+                            reading.timestamp,
+                            finding.rule_id,
+                            finding.severity.value,
+                            finding.metric,
+                            finding.observed_value,
+                            finding.threshold,
+                            finding.comparison,
+                            finding.message,
+                        )
+                        for finding in findings
+                    ],
+                )
+        return inserted

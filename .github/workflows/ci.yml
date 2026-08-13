@@ -47,3 +47,13 @@ jobs:
         run: docker compose config --quiet
       - name: Build application images
         run: docker compose build simulator consumer
+      - name: Start and verify database schema
+        run: |
+          docker compose up -d --wait timescaledb
+          docker compose run --rm schema-migrate
+          docker compose exec -T timescaledb psql \
+            -U smart_factory -d smart_factory -v ON_ERROR_STOP=1 \
+            -c "SELECT 1 FROM anomaly_findings LIMIT 1;"
+      - name: Stop Compose services
+        if: always()
+        run: docker compose down -v

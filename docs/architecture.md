@@ -1,61 +1,60 @@
-# Architecture v0.3
+# Architecture v0.4
 
 ## Scope
 
-Version 0.3 adds durable time-series persistence to the v0.2 ingestion flow. It stops
-before APIs and anomaly detection.
+Version 0.4 adds deterministic anomaly detection and durable findings to the v0.3
+telemetry path. It stops before APIs and machine learning.
 
 ```text
-MachineSimulator → MqttPublisher → Mosquitto → MqttTelemetryConsumer
-                                                    │ validated TelemetryReading
-                                                    ▼
-                                      TelemetryApplicationService
-                                                    │ TelemetryRepository port
-                                                    ▼
-                                      PsycopgTelemetryRepository
-                                                    │ parameterized INSERT
-                                                    ▼
-                               TimescaleDB telemetry_readings hypertable
+MQTT → validation → TelemetryApplicationService
+                            │
+                            ├── RuleBasedAnomalyDetector → AnomalyFinding(s)
+                            │
+                            └── TelemetryRepository port
+                                        │ one transaction
+                                        ▼
+                              telemetry_readings
+                              anomaly_findings
 ```
 
 ## Dependency direction
 
-- `domain` owns the strict Pydantic v2 `TelemetryReading` contract.
-- `application` defines the inbound `TelemetryHandler`, outbound
-  `TelemetryRepository`, and orchestration service. It knows neither transport nor SQL.
-- `infrastructure.mqtt` translates untrusted MQTT messages into validated application
-  input.
-- `infrastructure.database` implements the persistence port with Psycopg 3.
-- `consumer_main` composes and owns both adapters and their lifecycles.
+- `domain` owns `TelemetryReading`, `AnomalyFinding`, severities, thresholds, and the
+  pure rule evaluator.
+- `application` orchestrates detection and persistence through ports. It knows no MQTT,
+  Psycopg, or SQL.
+- `infrastructure.mqtt` converts untrusted payloads into validated application input.
+- `infrastructure.database` atomically stores a reading and all its findings.
+- `consumer_main` supplies configured thresholds and composes the adapters.
 
-## Time-series model
+The detector has no I/O and evaluates all rules so simultaneous symptoms remain
+visible. Findings contain enough evidence to explain every decision without re-running
+the current configuration.
 
-`telemetry_readings` is a TimescaleDB hypertable partitioned on `recorded_at`. The
-machine timestamp is preserved separately from `ingested_at`, which records arrival at
-the database. The composite primary key `(machine_id, recorded_at)` includes the
-partitioning column and provides the idempotency key.
+## Persistence and idempotency
 
-The database repeats essential contract constraints as defense in depth. SQL uses bound
-parameters. Schema creation is an idempotent container initialization script; changing
-an already deployed schema will require explicit migrations in a later release.
+`telemetry_readings` remains a TimescaleDB hypertable. `anomaly_findings` references a
+reading through `(machine_id, recorded_at)` and uses
+`(machine_id, recorded_at, rule_id)` as its primary key. Reading and findings share the
+same Psycopg transaction. QoS 1 redelivery therefore neither loses the relationship nor
+duplicates findings.
+
+The idempotent `schema-migrate` Compose service applies the anomaly table to both fresh
+databases and retained v0.3 volumes before the consumer starts. This is deliberately a
+small release migration; a versioned migration framework is still required before
+multiple evolving production environments exist.
 
 ## Delivery and failure semantics
 
-- MQTT QoS 1 can redeliver messages.
-- The consumer enables manual acknowledgements.
-- A valid message is acknowledged only after the repository transaction commits.
-- Invalid input is acknowledged and discarded after structured warning logging.
-- A storage/application exception remains unacknowledged and is logged; duplicate
-  delivery is safe because insertion uses `ON CONFLICT DO NOTHING`.
-- The Psycopg pool bounds concurrent connections and checks a connection before use.
-
-This is not exactly-once delivery: the design combines at-least-once transport with an
-idempotent database write to achieve effectively-once storage for the chosen natural
-key.
+- Valid input is acknowledged only after detection and the database transaction finish.
+- Invalid input is logged, acknowledged, and discarded.
+- Detection or persistence failure leaves the MQTT message unacknowledged.
+- Rule thresholds are validated against the outer telemetry contract bounds.
+- Structured anomaly logs include evidence, not raw payloads.
 
 ## Operational boundaries
 
-Compose waits for both Mosquitto and TimescaleDB health before starting the consumer.
-Local credentials and published ports are development conveniences. Production still
-requires secret management, TLS, topic authorization, database backups, migrations,
-metrics, and alerting.
+The rules are known-condition monitoring, not prediction. They do not learn baselines,
+correlations, drift, or machine-specific behavior. Local credentials and published
+ports remain development conveniences. Production still requires secrets, TLS,
+authorization, backups, migration tracking, metrics, and alert routing.

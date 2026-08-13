@@ -2,12 +2,20 @@
 
 import os
 from dataclasses import dataclass
+from math import isfinite
 
 
 def _required_range(name: str, default: str, minimum: int, maximum: int) -> int:
     value = int(os.getenv(name, default))
     if not minimum <= value <= maximum:
         raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
+def _required_float_range(name: str, default: str, minimum: float, maximum: float) -> float:
+    value = float(os.getenv(name, default))
+    if not isfinite(value) or not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be between {minimum:g} and {maximum:g}")
     return value
 
 
@@ -29,6 +37,10 @@ class Settings:
     database_pool_min_size: int
     database_pool_max_size: int
     database_connect_timeout_seconds: float
+    maximum_temperature_c: float
+    maximum_vibration_mm_s: float
+    maximum_power_kw: float
+    minimum_production_rate: int
 
     @property
     def topic(self) -> str:
@@ -50,6 +62,12 @@ class Settings:
         database_timeout = float(os.getenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "10.0"))
         if database_timeout <= 0:
             raise ValueError("DATABASE_CONNECT_TIMEOUT_SECONDS must be greater than zero")
+        maximum_temperature = _required_float_range(
+            "ANOMALY_MAX_TEMPERATURE_C", "90.0", -50.0, 250.0
+        )
+        maximum_vibration = _required_float_range("ANOMALY_MAX_VIBRATION_MM_S", "7.0", 0.0, 100.0)
+        maximum_power = _required_float_range("ANOMALY_MAX_POWER_KW", "30.0", 0.0, 500.0)
+        minimum_production = _required_range("ANOMALY_MIN_PRODUCTION_RATE", "25", 0, 10_000)
         return cls(
             mqtt_host=os.getenv("MQTT_HOST", "localhost"),
             mqtt_port=_required_range("MQTT_PORT", "1883", 1, 65535),
@@ -70,4 +88,8 @@ class Settings:
             database_pool_min_size=pool_min_size,
             database_pool_max_size=pool_max_size,
             database_connect_timeout_seconds=database_timeout,
+            maximum_temperature_c=maximum_temperature,
+            maximum_vibration_mm_s=maximum_vibration,
+            maximum_power_kw=maximum_power,
+            minimum_production_rate=minimum_production,
         )

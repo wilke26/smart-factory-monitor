@@ -21,6 +21,10 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
         "DATABASE_POOL_MIN_SIZE",
         "DATABASE_POOL_MAX_SIZE",
         "DATABASE_CONNECT_TIMEOUT_SECONDS",
+        "ANOMALY_MAX_TEMPERATURE_C",
+        "ANOMALY_MAX_VIBRATION_MM_S",
+        "ANOMALY_MAX_POWER_KW",
+        "ANOMALY_MIN_PRODUCTION_RATE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -34,6 +38,10 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
     assert settings.database_pool_min_size == 1
     assert settings.database_pool_max_size == 4
     assert settings.database_url.endswith("@localhost:5432/smart_factory")
+    assert settings.maximum_temperature_c == 90
+    assert settings.maximum_vibration_mm_s == 7
+    assert settings.maximum_power_kw == 30
+    assert settings.minimum_production_rate == 25
 
 
 def test_reads_optional_seed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,4 +86,22 @@ def test_rejects_non_positive_database_timeout(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "0")
 
     with pytest.raises(ValueError, match="greater than zero"):
+        Settings.from_env()
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("ANOMALY_MAX_TEMPERATURE_C", "nan"),
+        ("ANOMALY_MAX_VIBRATION_MM_S", "101"),
+        ("ANOMALY_MAX_POWER_KW", "-1"),
+        ("ANOMALY_MIN_PRODUCTION_RATE", "10001"),
+    ],
+)
+def test_rejects_thresholds_outside_contract_bounds(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError, match="must be between"):
         Settings.from_env()

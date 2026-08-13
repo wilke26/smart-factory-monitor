@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smart-factory-monitor"
-version = "0.3.0"
-description = "A production-minded MQTT and TimescaleDB telemetry pipeline for a Smart Factory portfolio project."
+version = "0.4.0"
+description = "A production-minded Smart Factory telemetry pipeline with explainable rule-based anomaly detection."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }

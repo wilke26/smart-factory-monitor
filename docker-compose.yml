@@ -38,6 +38,31 @@ services:
       retries: 5
       start_period: 3s
 
+  schema-migrate:
+    image: timescale/timescaledb:2.29.0-pg16
+    restart: "no"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-smart_factory_dev}
+    volumes:
+      - ./docker/timescaledb/migrations:/migrations:ro
+    command:
+      [
+        "psql",
+        "-h",
+        "timescaledb",
+        "-U",
+        "${POSTGRES_USER:-smart_factory}",
+        "-d",
+        "${POSTGRES_DB:-smart_factory}",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-f",
+        "/migrations/002-create-anomaly-findings.sql",
+      ]
+
   simulator:
     build:
       context: .
@@ -69,6 +94,8 @@ services:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
+      schema-migrate:
+        condition: service_completed_successfully
     environment:
       MQTT_HOST: ${MQTT_HOST:-mosquitto}
       MQTT_PORT: ${MQTT_PORT:-1883}
@@ -81,6 +108,10 @@ services:
       DATABASE_POOL_MIN_SIZE: ${DATABASE_POOL_MIN_SIZE:-1}
       DATABASE_POOL_MAX_SIZE: ${DATABASE_POOL_MAX_SIZE:-4}
       DATABASE_CONNECT_TIMEOUT_SECONDS: ${DATABASE_CONNECT_TIMEOUT_SECONDS:-10.0}
+      ANOMALY_MAX_TEMPERATURE_C: ${ANOMALY_MAX_TEMPERATURE_C:-90.0}
+      ANOMALY_MAX_VIBRATION_MM_S: ${ANOMALY_MAX_VIBRATION_MM_S:-7.0}
+      ANOMALY_MAX_POWER_KW: ${ANOMALY_MAX_POWER_KW:-30.0}
+      ANOMALY_MIN_PRODUCTION_RATE: ${ANOMALY_MIN_PRODUCTION_RATE:-25}
 
 volumes:
   mosquitto-data:

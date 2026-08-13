@@ -12,8 +12,8 @@ Human responsibilities remain:
 - inspect container and CI configuration;
 - reject unnecessary patterns or premature features.
 
-For v0.3, automated checks cover the Pydantic boundary, simulator, MQTT acceptance and
-rejection, application ports, parameterized/idempotent persistence, configuration,
-serialization round trips, linting, formatting, static types and container builds. The
-release acceptance test also verifies a real MQTT message reaches the TimescaleDB
-hypertable and an invalid message does not create a row.
+For v0.4, automated checks additionally cover every rule, exact boundary behavior,
+simultaneous findings, threshold validation, atomic parameterized persistence, duplicate
+handling, and application failure semantics. Release acceptance verifies normal input
+creates no finding, anomalous input creates the expected evidence, duplicate delivery
+does not duplicate findings, and an existing v0.3 volume is migrated without data loss.
