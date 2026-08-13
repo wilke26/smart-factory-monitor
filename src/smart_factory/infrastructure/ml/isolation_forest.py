@@ -25,6 +25,10 @@ FEATURE_NAMES: Final = (
 )
 
 
+class MlArtifactError(RuntimeError):
+    """The configured model artifact cannot be safely used for inference."""
+
+
 def _features(reading: TelemetryReading) -> list[float]:
     return [
         reading.temperature_c,
@@ -114,24 +118,38 @@ class IsolationForestAnomalyDetector:
     def load(cls, path: Path) -> IsolationForestAnomalyDetector:
         # joblib uses pickle semantics: only load artifacts produced by this project
         # from a trusted model volume.
-        payload = cast(dict[str, Any], joblib.load(path))
+        try:
+            loaded = joblib.load(path)
+        except Exception as error:
+            raise MlArtifactError(f"could not load ML artifact {path}: {error}") from error
+        try:
+            return cls(cls._validate_artifact(cast(Any, loaded)))
+        except MlArtifactError:
+            raise
+        except Exception as error:
+            raise MlArtifactError(f"invalid ML artifact {path}: {error}") from error
+
+    @staticmethod
+    def _validate_artifact(loaded: Any) -> IsolationForestArtifact:
+        if not isinstance(loaded, dict):
+            raise MlArtifactError("ML artifact payload must be a dictionary")
+        payload = cast(dict[str, Any], loaded)
         if payload.get("format_version") != ARTIFACT_FORMAT_VERSION:
-            raise ValueError("unsupported ML artifact format")
+            raise MlArtifactError("unsupported ML artifact format")
         if tuple(payload.get("feature_names", ())) != FEATURE_NAMES:
-            raise ValueError("ML artifact feature contract does not match telemetry")
+            raise MlArtifactError("ML artifact feature contract does not match telemetry")
         if payload.get("sklearn_version") != sklearn.__version__:
-            raise ValueError("ML artifact scikit-learn version does not match runtime")
+            raise MlArtifactError("ML artifact scikit-learn version does not match runtime")
         estimator = payload.get("estimator")
         if not isinstance(estimator, IsolationForest):
-            raise ValueError("ML artifact does not contain an IsolationForest")
-        artifact = IsolationForestArtifact(
+            raise MlArtifactError("ML artifact does not contain an IsolationForest")
+        return IsolationForestArtifact(
             estimator=estimator,
             model_id=str(payload["model_id"]),
             machine_id=str(payload["machine_id"]),
             trained_at=str(payload["trained_at"]),
             training_samples=int(payload["training_samples"]),
         )
-        return cls(artifact)
 
     def evaluate(self, reading: TelemetryReading) -> tuple[AnomalyFinding, ...]:
         if reading.machine_id != self._artifact.machine_id:

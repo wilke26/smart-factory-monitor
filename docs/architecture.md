@@ -42,6 +42,10 @@ The artifact validates format version, exact feature order, target machine, esti
 type, and scikit-learn version. Because joblib has pickle semantics, the model volume is
 a trust boundary and must not accept untrusted uploads.
 
+Missing, unreadable, and incompatible artifacts are normalized to `MlArtifactError`.
+That permanent startup/configuration error is deliberately outside the MQTT/database
+retry policy, so an enabled consumer fails fast with an actionable cause.
+
 ## Delivery and persistence semantics
 
 Rules and ML are evaluated before the existing TimescaleDB transaction. Every finding

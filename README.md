@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.5** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.5.1** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -129,7 +129,9 @@ ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
 The trainer writes a versioned artifact to the shared `ml-models` volume using an atomic
 replace. With ML enabled, the consumer validates the artifact format, feature order,
 machine identity, estimator type, and exact scikit-learn runtime version before serving.
-An enabled consumer does not silently fall back if the artifact is missing or invalid.
+An enabled consumer fails fast with a dedicated artifact error if the model is missing,
+unreadable, or invalid; permanent model configuration failures never enter the
+infrastructure retry loop.
 
 The artifact uses joblib/pickle semantics. Only load artifacts produced by this project
 and stored in the trusted local model volume. Model promotion, signing, evaluation

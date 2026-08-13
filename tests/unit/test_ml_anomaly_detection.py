@@ -8,6 +8,7 @@ from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.ml.isolation_forest import (
     IsolationForestAnomalyDetector,
     IsolationForestTrainer,
+    MlArtifactError,
 )
 from smart_factory.simulator.machine import MachineSimulator
 
@@ -86,5 +87,14 @@ def test_rejects_incompatible_artifact(tmp_path: Path) -> None:
     model_path = tmp_path / "model.joblib"
     joblib.dump({"format_version": 999}, model_path)
 
-    with pytest.raises(ValueError, match="unsupported"):
+    with pytest.raises(MlArtifactError, match="unsupported"):
         IsolationForestAnomalyDetector.load(model_path)
+
+
+def test_missing_artifact_has_dedicated_fail_fast_error(tmp_path: Path) -> None:
+    model_path = tmp_path / "missing.joblib"
+
+    with pytest.raises(MlArtifactError, match="could not load ML artifact") as raised:
+        IsolationForestAnomalyDetector.load(model_path)
+
+    assert isinstance(raised.value.__cause__, FileNotFoundError)

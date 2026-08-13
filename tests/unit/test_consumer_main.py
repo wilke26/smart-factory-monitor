@@ -2,11 +2,13 @@ import threading
 from contextlib import suppress
 from unittest.mock import Mock, patch
 
+import pytest
 from psycopg_pool import PoolTimeout
 
 import smart_factory.consumer_main as consumer_main
 from smart_factory.config import MlSettings, Settings
 from smart_factory.consumer_main import build_anomaly_detector, run
+from smart_factory.infrastructure.ml.isolation_forest import MlArtifactError
 
 
 def settings() -> Settings:
@@ -89,6 +91,30 @@ def test_main_retries_database_startup_timeout() -> None:
     stop_event.wait.assert_called_once_with(1.0)
     assert logger.warning.call_args.args[0] == "service_unavailable"
     assert logger.warning.call_args.kwargs["extra"]["retry_seconds"] == 1.0
+
+
+def test_main_does_not_retry_permanent_ml_artifact_error() -> None:
+    stop_event = Mock()
+    stop_event.is_set.return_value = False
+    logger = Mock()
+
+    with (
+        patch.object(consumer_main.Settings, "from_env", return_value=settings()),
+        patch.object(consumer_main, "configure_logging"),
+        patch.object(consumer_main.threading, "Event", return_value=stop_event),
+        patch.object(consumer_main.signal, "signal"),
+        patch.object(
+            consumer_main,
+            "run",
+            side_effect=MlArtifactError("model artifact is missing"),
+        ),
+        patch.object(consumer_main, "LOGGER", logger),
+        pytest.raises(MlArtifactError, match="artifact is missing"),
+    ):
+        consumer_main.main()
+
+    stop_event.wait.assert_not_called()
+    logger.warning.assert_not_called()
 
 
 def test_rule_detector_remains_available_when_ml_is_disabled() -> None:

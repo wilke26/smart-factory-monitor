@@ -3,6 +3,7 @@
 from smart_factory.infrastructure.ml.isolation_forest import (
     IsolationForestAnomalyDetector,
     IsolationForestTrainer,
+    MlArtifactError,
 )
 
-__all__ = ["IsolationForestAnomalyDetector", "IsolationForestTrainer"]
+__all__ = ["IsolationForestAnomalyDetector", "IsolationForestTrainer", "MlArtifactError"]
