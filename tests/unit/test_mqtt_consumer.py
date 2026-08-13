@@ -73,6 +73,27 @@ def test_isolates_application_failure(valid_payload: bytes) -> None:
     client.ack.assert_not_called()
 
 
+def test_unexpected_decode_failure_does_not_mask_original_error() -> None:
+    logger = Mock()
+    instance = consumer(logger=logger)
+    client = Mock()
+
+    with patch(
+        "smart_factory.infrastructure.mqtt.consumer.TelemetryReading.from_mqtt_payload",
+        side_effect=RuntimeError("unexpected decoder failure"),
+    ):
+        instance._on_message(client, None, message(b"payload"))  # type: ignore[arg-type]
+
+    logger.exception.assert_called_once_with(
+        "telemetry_processing_failed",
+        extra={
+            "topic": "factory/hall-a/press-01/telemetry",
+            "machine_id": None,
+        },
+    )
+    client.ack.assert_not_called()
+
+
 @patch("smart_factory.infrastructure.mqtt.consumer.mqtt.Client")
 def test_connect_timeout_stops_loop(client_factory: Mock) -> None:
     instance = consumer()

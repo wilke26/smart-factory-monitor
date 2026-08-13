@@ -19,6 +19,16 @@ def _required_float_range(name: str, default: str, minimum: float, maximum: floa
     return value
 
 
+def _optional_integer(name: str) -> int | None:
+    text = os.getenv(name, "").strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer") from error
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     mqtt_host: str
@@ -51,7 +61,6 @@ class Settings:
         interval = float(os.getenv("PUBLISH_INTERVAL_SECONDS", "2.0"))
         if interval <= 0:
             raise ValueError("PUBLISH_INTERVAL_SECONDS must be greater than zero")
-        seed_text = os.getenv("SIMULATOR_SEED", "").strip()
         topic_filter = os.getenv("MQTT_TOPIC_FILTER", "factory/+/+/telemetry").strip()
         if not topic_filter:
             raise ValueError("MQTT_TOPIC_FILTER must not be empty")
@@ -79,7 +88,7 @@ class Settings:
             factory_area=os.getenv("FACTORY_AREA", "hall-a"),
             machine_id=os.getenv("MACHINE_ID", "press-01"),
             publish_interval_seconds=interval,
-            simulator_seed=int(seed_text) if seed_text else None,
+            simulator_seed=_optional_integer("SIMULATOR_SEED"),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             database_url=os.getenv(
                 "DATABASE_URL",

@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.4** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.4.1** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 detects explainable rule violations, and atomically persists readings plus findings in

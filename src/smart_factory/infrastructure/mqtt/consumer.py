@@ -115,6 +115,7 @@ class MqttTelemetryConsumer:
 
     def _on_message(self, client: mqtt.Client, userdata: object, message: mqtt.MQTTMessage) -> None:
         del userdata
+        reading: TelemetryReading | None = None
         try:
             reading = TelemetryReading.from_mqtt_payload(message.payload)
             topic_machine_id = self._machine_id_from_topic(message.topic)
@@ -155,7 +156,10 @@ class MqttTelemetryConsumer:
         except Exception:
             self._logger.exception(
                 "telemetry_processing_failed",
-                extra={"topic": message.topic, "machine_id": reading.machine_id},
+                extra={
+                    "topic": message.topic,
+                    "machine_id": reading.machine_id if reading is not None else None,
+                },
             )
 
     @staticmethod

@@ -4,6 +4,8 @@ import logging
 import signal
 import threading
 
+from psycopg import OperationalError
+
 from smart_factory.application.services.telemetry import TelemetryApplicationService
 from smart_factory.config import Settings
 from smart_factory.domain.services.anomaly_detection import (
@@ -68,9 +70,9 @@ def main() -> None:
     while not stop_event.is_set():
         try:
             run(settings, stop_event)
-        except (ConnectionError, OSError) as error:
+        except (ConnectionError, OSError, OperationalError) as error:
             LOGGER.warning(
-                "mqtt_unavailable",
+                "service_unavailable",
                 extra={"reason": str(error), "retry_seconds": retry_delay},
             )
             stop_event.wait(retry_delay)

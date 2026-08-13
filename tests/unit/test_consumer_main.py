@@ -2,6 +2,9 @@ import threading
 from contextlib import suppress
 from unittest.mock import Mock, patch
 
+from psycopg_pool import PoolTimeout
+
+import smart_factory.consumer_main as consumer_main
 from smart_factory.config import Settings
 from smart_factory.consumer_main import run
 
@@ -55,3 +58,23 @@ def test_run_closes_after_connect_failure(consumer_type: Mock, repository_type: 
 
     consumer_type.return_value.close.assert_called_once()
     repository_type.return_value.close.assert_called_once()
+
+
+def test_main_retries_database_startup_timeout() -> None:
+    stop_event = Mock()
+    stop_event.is_set.side_effect = [False, True]
+    logger = Mock()
+
+    with (
+        patch.object(consumer_main.Settings, "from_env", return_value=settings()),
+        patch.object(consumer_main, "configure_logging"),
+        patch.object(consumer_main.threading, "Event", return_value=stop_event),
+        patch.object(consumer_main.signal, "signal"),
+        patch.object(consumer_main, "run", side_effect=PoolTimeout("database unavailable")),
+        patch.object(consumer_main, "LOGGER", logger),
+    ):
+        consumer_main.main()
+
+    stop_event.wait.assert_called_once_with(1.0)
+    assert logger.warning.call_args.args[0] == "service_unavailable"
+    assert logger.warning.call_args.kwargs["extra"]["retry_seconds"] == 1.0

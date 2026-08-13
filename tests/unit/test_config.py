@@ -50,6 +50,13 @@ def test_reads_optional_seed(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Settings.from_env().simulator_seed == 42
 
 
+def test_rejects_non_integer_seed_with_setting_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIMULATOR_SEED", "not-an-integer")
+
+    with pytest.raises(ValueError, match="SIMULATOR_SEED must be an integer"):
+        Settings.from_env()
+
+
 @pytest.mark.parametrize(("name", "value"), [("MQTT_QOS", "3"), ("MQTT_PORT", "0")])
 def test_rejects_out_of_range_integer_settings(
     monkeypatch: pytest.MonkeyPatch, name: str, value: str
