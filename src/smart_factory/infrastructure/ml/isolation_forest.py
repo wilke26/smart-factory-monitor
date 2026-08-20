@@ -115,7 +115,12 @@ class IsolationForestAnomalyDetector:
         self._artifact = artifact
 
     @classmethod
-    def load(cls, path: Path) -> IsolationForestAnomalyDetector:
+    def load(
+        cls,
+        path: Path,
+        *,
+        expected_machine_id: str,
+    ) -> IsolationForestAnomalyDetector:
         # joblib uses pickle semantics: only load artifacts produced by this project
         # from a trusted model volume.
         try:
@@ -123,7 +128,13 @@ class IsolationForestAnomalyDetector:
         except Exception as error:
             raise MlArtifactError(f"could not load ML artifact {path}: {error}") from error
         try:
-            return cls(cls._validate_artifact(cast(Any, loaded)))
+            artifact = cls._validate_artifact(cast(Any, loaded))
+            if artifact.machine_id != expected_machine_id:
+                raise MlArtifactError(
+                    "ML artifact machine does not match configured machine: "
+                    f"expected {expected_machine_id}, got {artifact.machine_id}"
+                )
+            return cls(artifact)
         except MlArtifactError:
             raise
         except Exception as error:

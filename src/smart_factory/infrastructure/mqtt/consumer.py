@@ -2,14 +2,19 @@
 
 import logging
 import threading
+from collections.abc import Callable
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
+from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from paho.mqtt.reasoncodes import ReasonCode
 from pydantic import ValidationError
 
-from smart_factory.application.ports.telemetry import TelemetryHandler
+from smart_factory.application.ports.telemetry import (
+    TelemetryHandler,
+    TelemetryIdentityConflictError,
+)
 from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.mqtt.publisher import MqttConnectionError
 
@@ -28,6 +33,10 @@ class MqttTelemetryConsumer:
         qos: int = 1,
         keepalive: int = 60,
         connect_timeout: float = 10.0,
+        session_expiry_seconds: int = 86_400,
+        receive_maximum: int = 20,
+        on_connection_change: Callable[[bool], None] | None = None,
+        on_message_outcome: Callable[[str], None] | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self._host = host
@@ -37,6 +46,10 @@ class MqttTelemetryConsumer:
         self._qos = qos
         self._keepalive = keepalive
         self._connect_timeout = connect_timeout
+        self._session_expiry_seconds = session_expiry_seconds
+        self._receive_maximum = receive_maximum
+        self._on_connection_change = on_connection_change
+        self._on_message_outcome = on_message_outcome
         self._logger = logger or logging.getLogger(__name__)
         self._connected = threading.Event()
         self._connection_error: str | None = None
@@ -54,8 +67,18 @@ class MqttTelemetryConsumer:
     def connect(self) -> None:
         """Connect and wait until the subscription has been registered."""
         self._connected.clear()
+        self._record_connection_change(False)
         self._connection_error = None
-        self._client.connect(self._host, self._port, self._keepalive)
+        properties = Properties(PacketTypes.CONNECT)  # type: ignore[no-untyped-call]
+        properties.SessionExpiryInterval = self._session_expiry_seconds
+        properties.ReceiveMaximum = self._receive_maximum
+        self._client.connect(
+            self._host,
+            self._port,
+            self._keepalive,
+            clean_start=False,
+            properties=properties,
+        )
         self._client.loop_start()
         if not self._connected.wait(self._connect_timeout):
             self.close()
@@ -68,6 +91,7 @@ class MqttTelemetryConsumer:
             self._client.disconnect()
         self._client.loop_stop()
         self._connected.clear()
+        self._record_connection_change(False)
 
     def _on_connect(
         self,
@@ -91,6 +115,7 @@ class MqttTelemetryConsumer:
             )
             return
         self._connected.set()
+        self._record_connection_change(True)
         self._logger.info(
             "mqtt_subscribed",
             extra={
@@ -110,6 +135,7 @@ class MqttTelemetryConsumer:
     ) -> None:
         del client, userdata, disconnect_flags, properties
         self._connected.clear()
+        self._record_connection_change(False)
         if reason_code.is_failure:
             self._logger.warning("mqtt_disconnected", extra={"reason": str(reason_code)})
 
@@ -129,13 +155,26 @@ class MqttTelemetryConsumer:
                     },
                 )
                 client.ack(message.mid, message.qos)
+                self._record_outcome("topic_mismatch")
                 return
             self._handler.process(reading)
             client.ack(message.mid, message.qos)
+            self._record_outcome("accepted")
             self._logger.info(
                 "telemetry_accepted",
                 extra={"topic": message.topic, "machine_id": reading.machine_id},
             )
+        except TelemetryIdentityConflictError as error:
+            self._logger.error(
+                "telemetry_rejected_identity_conflict",
+                extra={
+                    "topic": message.topic,
+                    "machine_id": reading.machine_id if reading is not None else None,
+                    "reason": str(error),
+                },
+            )
+            client.ack(message.mid, message.qos)
+            self._record_outcome("identity_conflict")
         except ValidationError as error:
             self._logger.warning(
                 "telemetry_rejected_invalid_payload",
@@ -147,12 +186,14 @@ class MqttTelemetryConsumer:
                 },
             )
             client.ack(message.mid, message.qos)
+            self._record_outcome("invalid_payload")
         except ValueError as error:
             self._logger.warning(
                 "telemetry_rejected_invalid_topic",
                 extra={"topic": message.topic, "reason": str(error)},
             )
             client.ack(message.mid, message.qos)
+            self._record_outcome("invalid_topic")
         except Exception:
             self._logger.exception(
                 "telemetry_processing_failed",
@@ -161,6 +202,15 @@ class MqttTelemetryConsumer:
                     "machine_id": reading.machine_id if reading is not None else None,
                 },
             )
+            self._record_outcome("processing_failed")
+
+    def _record_connection_change(self, connected: bool) -> None:
+        if self._on_connection_change is not None:
+            self._on_connection_change(connected)
+
+    def _record_outcome(self, outcome: str) -> None:
+        if self._on_message_outcome is not None:
+            self._on_message_outcome(outcome)
 
     @staticmethod
     def _machine_id_from_topic(topic: str) -> str:

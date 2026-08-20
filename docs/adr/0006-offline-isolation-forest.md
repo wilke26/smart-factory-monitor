@@ -12,8 +12,10 @@ message delivery, make behavior nondeterministic, and risk corrupting the live b
 ## Decision
 
 Train a machine-specific Isolation Forest in an explicit offline command from bounded
-TimescaleDB history. Store a versioned artifact in a trusted local model volume. Compose
-the loaded model with the existing rules through an application-owned detector port.
+TimescaleDB history. Store a versioned artifact in a trusted local model volume and
+require its embedded machine identity to match the configured inference machine when
+loading it. Compose the loaded model with the existing rules through an application-owned
+detector port.
 Keep ML disabled until an operator trains and explicitly enables a compatible artifact.
 
 ## Consequences

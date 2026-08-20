@@ -6,6 +6,10 @@ from smart_factory.domain.anomaly import AnomalyFinding
 from smart_factory.domain.telemetry import TelemetryReading
 
 
+class TelemetryIdentityConflictError(RuntimeError):
+    """The natural telemetry identity already belongs to different measurement data."""
+
+
 class TelemetryHandler(Protocol):
     """Something that processes already validated telemetry."""
 

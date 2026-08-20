@@ -1,12 +1,16 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
+import pytest
+
+from smart_factory.application.ports.telemetry import TelemetryIdentityConflictError
 from smart_factory.domain.anomaly import AnomalyFinding, AnomalySeverity
 from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.database.telemetry_repository import (
     INSERT_ANOMALY,
     INSERT_TELEMETRY,
     SELECT_RECENT_TELEMETRY,
+    SELECT_TELEMETRY_BY_IDENTITY,
     PsycopgTelemetryRepository,
 )
 
@@ -104,9 +108,34 @@ def test_saves_findings_in_same_connection_transaction() -> None:
 
 
 def test_duplicate_is_idempotent() -> None:
-    repository, _ = repository_with_pool(rowcount=0)
+    repository, pool = repository_with_pool(rowcount=0)
+    measurement = reading()
+    connection = pool.connection.return_value.__enter__.return_value
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (
+        measurement.temperature_c,
+        measurement.vibration_mm_s,
+        measurement.power_kw,
+        measurement.production_rate,
+    )
 
-    assert repository.save(reading(), (finding(),)) is False
+    assert repository.save(measurement, (finding(),)) is False
+    assert cursor.execute.call_args_list[1].args == (
+        SELECT_TELEMETRY_BY_IDENTITY,
+        (measurement.machine_id, measurement.timestamp),
+    )
+
+
+def test_rejects_same_identity_with_different_measurement() -> None:
+    repository, pool = repository_with_pool(rowcount=0)
+    connection = pool.connection.return_value.__enter__.return_value
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (95.0, 2.7, 17.3, 44)
+
+    with pytest.raises(TelemetryIdentityConflictError, match="press-01"):
+        repository.save(reading(), (finding(),))
+
+    cursor.executemany.assert_not_called()
 
 
 def test_loads_recent_readings_for_training() -> None:

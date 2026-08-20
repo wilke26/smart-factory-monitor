@@ -29,7 +29,7 @@ def test_trains_loads_and_detects_multivariate_outlier(tmp_path: Path) -> None:
     readings = training_readings()
 
     artifact = IsolationForestTrainer(contamination=0.01).train(readings, model_path)
-    detector = IsolationForestAnomalyDetector.load(model_path)
+    detector = IsolationForestAnomalyDetector.load(model_path, expected_machine_id="press-01")
     outlier = readings[0].model_copy(
         update={
             "timestamp": datetime(2026, 8, 14, tzinfo=UTC),
@@ -64,7 +64,12 @@ def test_central_training_reading_is_normal(tmp_path: Path) -> None:
         }
     )
 
-    assert IsolationForestAnomalyDetector.load(model_path).evaluate(central) == ()
+    assert (
+        IsolationForestAnomalyDetector.load(model_path, expected_machine_id="press-01").evaluate(
+            central
+        )
+        == ()
+    )
 
 
 def test_model_does_not_score_a_different_machine(tmp_path: Path) -> None:
@@ -73,7 +78,20 @@ def test_model_does_not_score_a_different_machine(tmp_path: Path) -> None:
     IsolationForestTrainer(contamination=0.01).train(readings, model_path)
     other_machine = readings[0].model_copy(update={"machine_id": "press-02"})
 
-    assert IsolationForestAnomalyDetector.load(model_path).evaluate(other_machine) == ()
+    assert (
+        IsolationForestAnomalyDetector.load(model_path, expected_machine_id="press-01").evaluate(
+            other_machine
+        )
+        == ()
+    )
+
+
+def test_rejects_artifact_for_unconfigured_machine(tmp_path: Path) -> None:
+    model_path = tmp_path / "model.joblib"
+    IsolationForestTrainer(contamination=0.01).train(training_readings(), model_path)
+
+    with pytest.raises(MlArtifactError, match="expected press-02, got press-01"):
+        IsolationForestAnomalyDetector.load(model_path, expected_machine_id="press-02")
 
 
 def test_rejects_insufficient_training_data(tmp_path: Path) -> None:
@@ -88,13 +106,13 @@ def test_rejects_incompatible_artifact(tmp_path: Path) -> None:
     joblib.dump({"format_version": 999}, model_path)
 
     with pytest.raises(MlArtifactError, match="unsupported"):
-        IsolationForestAnomalyDetector.load(model_path)
+        IsolationForestAnomalyDetector.load(model_path, expected_machine_id="press-01")
 
 
 def test_missing_artifact_has_dedicated_fail_fast_error(tmp_path: Path) -> None:
     model_path = tmp_path / "missing.joblib"
 
     with pytest.raises(MlArtifactError, match="could not load ML artifact") as raised:
-        IsolationForestAnomalyDetector.load(model_path)
+        IsolationForestAnomalyDetector.load(model_path, expected_machine_id="press-01")
 
     assert isinstance(raised.value.__cause__, FileNotFoundError)

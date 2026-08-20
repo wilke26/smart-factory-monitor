@@ -12,6 +12,8 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
         "MQTT_CLIENT_ID",
         "MQTT_CONSUMER_CLIENT_ID",
         "MQTT_TOPIC_FILTER",
+        "MQTT_SESSION_EXPIRY_SECONDS",
+        "MQTT_RECEIVE_MAXIMUM",
         "FACTORY_AREA",
         "MACHINE_ID",
         "PUBLISH_INTERVAL_SECONDS",
@@ -25,6 +27,8 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
         "ANOMALY_MAX_VIBRATION_MM_S",
         "ANOMALY_MAX_POWER_KW",
         "ANOMALY_MIN_PRODUCTION_RATE",
+        "MONITORING_HOST",
+        "MONITORING_PORT",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -35,6 +39,8 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
     assert settings.mqtt_qos == 1
     assert settings.mqtt_consumer_client_id == "smart-factory-consumer"
     assert settings.mqtt_topic_filter == "factory/+/+/telemetry"
+    assert settings.mqtt_session_expiry_seconds == 86_400
+    assert settings.mqtt_receive_maximum == 20
     assert settings.database_pool_min_size == 1
     assert settings.database_pool_max_size == 4
     assert settings.database_url.endswith("@localhost:5432/smart_factory")
@@ -42,6 +48,8 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
     assert settings.maximum_vibration_mm_s == 7
     assert settings.maximum_power_kw == 30
     assert settings.minimum_production_rate == 25
+    assert settings.monitoring_host == "0.0.0.0"
+    assert settings.monitoring_port == 8000
 
 
 def test_reads_optional_seed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,7 +65,16 @@ def test_rejects_non_integer_seed_with_setting_name(monkeypatch: pytest.MonkeyPa
         Settings.from_env()
 
 
-@pytest.mark.parametrize(("name", "value"), [("MQTT_QOS", "3"), ("MQTT_PORT", "0")])
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("MQTT_QOS", "3"),
+        ("MQTT_PORT", "0"),
+        ("MQTT_SESSION_EXPIRY_SECONDS", "0"),
+        ("MQTT_RECEIVE_MAXIMUM", "65536"),
+        ("MONITORING_PORT", "0"),
+    ],
+)
 def test_rejects_out_of_range_integer_settings(
     monkeypatch: pytest.MonkeyPatch, name: str, value: str
 ) -> None:

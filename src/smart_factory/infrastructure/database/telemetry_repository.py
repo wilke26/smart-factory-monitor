@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from typing import Any, Protocol, cast
 
+from smart_factory.application.ports.telemetry import TelemetryIdentityConflictError
 from smart_factory.domain.anomaly import AnomalyFinding
 from smart_factory.domain.telemetry import TelemetryReading
 
@@ -51,6 +52,16 @@ ORDER BY recorded_at DESC
 LIMIT %s
 """
 
+SELECT_TELEMETRY_BY_IDENTITY = """
+SELECT
+    temperature_c,
+    vibration_mm_s,
+    power_kw,
+    production_rate
+FROM telemetry_readings
+WHERE machine_id = %s AND recorded_at = %s
+"""
+
 
 class CursorLike(Protocol):
     rowcount: int
@@ -60,6 +71,8 @@ class CursorLike(Protocol):
     def executemany(self, query: str, params_seq: list[tuple[object, ...]]) -> None: ...
 
     def fetchall(self) -> list[tuple[object, ...]]: ...
+
+    def fetchone(self) -> tuple[object, ...] | None: ...
 
 
 class ConnectionLike(Protocol):
@@ -129,6 +142,23 @@ class PsycopgTelemetryRepository:
         with self._pool.connection() as connection, connection.cursor() as cursor:
             cursor.execute(INSERT_TELEMETRY, parameters)
             inserted = cursor.rowcount == 1
+            if not inserted:
+                cursor.execute(
+                    SELECT_TELEMETRY_BY_IDENTITY,
+                    (reading.machine_id, reading.timestamp),
+                )
+                persisted = cursor.fetchone()
+                expected = (
+                    reading.temperature_c,
+                    reading.vibration_mm_s,
+                    reading.power_kw,
+                    reading.production_rate,
+                )
+                if persisted is None or persisted != expected:
+                    raise TelemetryIdentityConflictError(
+                        "telemetry identity conflict for "
+                        f"{reading.machine_id} at {reading.timestamp.isoformat()}"
+                    )
             if findings:
                 cursor.executemany(
                     INSERT_ANOMALY,

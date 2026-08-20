@@ -34,6 +34,8 @@ jobs:
         run: ruff format --check .
       - name: Type check
         run: mypy
+      - name: Audit Python dependencies
+        run: python -m pip_audit
       - name: Test
         run: pytest --cov=smart_factory --cov-report=term-missing --cov-report=xml
       - name: Build package
@@ -56,7 +58,17 @@ jobs:
             -c "INSERT INTO telemetry_readings (machine_id, recorded_at, temperature_c, vibration_mm_s, power_kw, production_rate) SELECT 'press-01', NOW() - number * INTERVAL '1 second', 68 + (number % 5) * 0.1, 2.5 + (number % 7) * 0.02, 17 + (number % 3) * 0.1, 44 + (number % 2) FROM generate_series(1, 120) AS number;"
           docker compose --profile tools run --rm model-trainer
           docker compose run --rm --no-deps consumer python -c \
-            "from pathlib import Path; from smart_factory.infrastructure.ml.isolation_forest import IsolationForestAnomalyDetector; IsolationForestAnomalyDetector.load(Path('/models/isolation-forest.joblib'))"
+            "from pathlib import Path; from smart_factory.infrastructure.ml.isolation_forest import IsolationForestAnomalyDetector; IsolationForestAnomalyDetector.load(Path('/models/isolation-forest.joblib'), expected_machine_id='press-01')"
+          ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --wait mosquitto consumer simulator
+          curl --fail --silent http://127.0.0.1:8000/readyz
+          for attempt in $(seq 1 20); do
+            reading_count=$(docker compose exec -T timescaledb psql \
+              -U smart_factory -d smart_factory -At \
+              -c "SELECT COUNT(*) FROM telemetry_readings")
+            if [ "$reading_count" -gt 120 ]; then break; fi
+            sleep 1
+          done
+          test "$reading_count" -gt 120
       - name: Stop Compose services
         if: always()
         run: docker compose down -v

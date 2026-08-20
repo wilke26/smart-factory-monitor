@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-smart_factory}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smart_factory_dev}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
       - ./docker/timescaledb/init:/docker-entrypoint-initdb.d:ro
@@ -26,7 +26,7 @@ services:
     image: eclipse-mosquitto:2.0.22
     restart: unless-stopped
     ports:
-      - "1883:1883"
+      - "127.0.0.1:1883:1883"
     volumes:
       - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mosquitto-data:/mosquitto/data
@@ -46,22 +46,12 @@ services:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:-smart_factory_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-smart_factory}
+      POSTGRES_DB: ${POSTGRES_DB:-smart_factory}
     volumes:
       - ./docker/timescaledb/migrations:/migrations:ro
-    command:
-      [
-        "psql",
-        "-h",
-        "timescaledb",
-        "-U",
-        "${POSTGRES_USER:-smart_factory}",
-        "-d",
-        "${POSTGRES_DB:-smart_factory}",
-        "-v",
-        "ON_ERROR_STOP=1",
-        "-f",
-        "/migrations/002-create-anomaly-findings.sql",
-      ]
+      - ./docker/timescaledb/migrate.sh:/migrate.sh:ro
+    command: ["sh", "/migrate.sh"]
 
   simulator:
     build:
@@ -105,6 +95,8 @@ services:
       MQTT_QOS: ${MQTT_QOS:-1}
       MQTT_CONSUMER_CLIENT_ID: ${MQTT_CONSUMER_CLIENT_ID:-smart-factory-consumer}
       MQTT_TOPIC_FILTER: ${MQTT_TOPIC_FILTER:-factory/+/+/telemetry}
+      MQTT_SESSION_EXPIRY_SECONDS: ${MQTT_SESSION_EXPIRY_SECONDS:-86400}
+      MQTT_RECEIVE_MAXIMUM: ${MQTT_RECEIVE_MAXIMUM:-20}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: ${DATABASE_URL:-postgresql://smart_factory:smart_factory_dev@timescaledb:5432/smart_factory}
       DATABASE_POOL_MIN_SIZE: ${DATABASE_POOL_MIN_SIZE:-1}
@@ -120,8 +112,24 @@ services:
       ML_CONTAMINATION: ${ML_CONTAMINATION:-0.05}
       ML_MINIMUM_TRAINING_SAMPLES: ${ML_MINIMUM_TRAINING_SAMPLES:-100}
       ML_TRAINING_LIMIT: ${ML_TRAINING_LIMIT:-10000}
+      MONITORING_HOST: 0.0.0.0
+      MONITORING_PORT: 8000
     volumes:
       - ml-models:/models:ro
+    ports:
+      - "127.0.0.1:${MONITORING_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2).read()",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   model-trainer:
     build:

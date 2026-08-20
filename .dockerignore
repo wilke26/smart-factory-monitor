@@ -10,5 +10,7 @@ __pycache__
 .ruff_cache
 dist
 build
+output
+_to_delete
 tests
 docs

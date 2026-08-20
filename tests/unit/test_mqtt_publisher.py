@@ -32,6 +32,7 @@ def test_publish_waits_for_successful_handoff(client_factory: Mock) -> None:
     client = client_factory.return_value
     result = client.publish.return_value
     result.rc = mqtt.MQTT_ERR_SUCCESS
+    result.is_published.return_value = True
     publisher = MqttPublisher("broker", 1883, "test-client")
     publisher._connected.set()
 
@@ -41,6 +42,19 @@ def test_publish_waits_for_successful_handoff(client_factory: Mock) -> None:
         "factory/hall-a/press-01/telemetry", payload=b"{}", qos=1, retain=False
     )
     result.wait_for_publish.assert_called_once_with(timeout=10.0)
+    result.is_published.assert_called_once_with()
+
+
+@patch("smart_factory.infrastructure.mqtt.publisher.mqtt.Client")
+def test_publish_reports_acknowledgement_timeout(client_factory: Mock) -> None:
+    result = client_factory.return_value.publish.return_value
+    result.rc = mqtt.MQTT_ERR_SUCCESS
+    result.is_published.return_value = False
+    publisher = MqttPublisher("broker", 1883, "test-client")
+    publisher._connected.set()
+
+    with pytest.raises(MqttConnectionError, match="acknowledgement timed out"):
+        publisher.publish("factory/hall-a/press-01/telemetry", b"{}")
 
 
 @patch("smart_factory.infrastructure.mqtt.publisher.mqtt.Client")

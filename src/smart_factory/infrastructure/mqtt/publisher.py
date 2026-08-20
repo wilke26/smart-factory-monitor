@@ -63,6 +63,8 @@ class MqttPublisher:
         result.wait_for_publish(timeout=10.0)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             raise MqttConnectionError(f"MQTT publish failed with result code {result.rc}")
+        if not result.is_published():
+            raise MqttConnectionError("MQTT publish acknowledgement timed out")
 
     def close(self) -> None:
         """Stop networking and close the broker connection."""

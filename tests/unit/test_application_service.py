@@ -83,3 +83,25 @@ def test_detected_findings_are_persisted_and_logged() -> None:
     assert [finding.rule_id for finding in findings] == ["temperature-high"]
     logger.warning.assert_called_once()
     assert logger.warning.call_args.args[0] == "anomaly_detected"
+
+
+def test_reports_processing_metrics_after_persistence() -> None:
+    repository = Mock()
+    repository.save.return_value = False
+    observer = Mock()
+    clock = Mock(side_effect=[10.0, 10.25])
+    service = TelemetryApplicationService(
+        repository=repository,
+        anomaly_detector=RuleBasedAnomalyDetector(),
+        observer=observer,
+        clock=clock,
+        logger=Mock(),
+    )
+
+    service.process(reading())
+
+    observer.record_processed.assert_called_once_with(
+        inserted=False,
+        anomaly_count=0,
+        duration_seconds=0.25,
+    )

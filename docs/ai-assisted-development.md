@@ -22,3 +22,9 @@ For v0.5, checks cover detector composition, minimum training data, machine isol
 artifact compatibility, deterministic training, normal/outlier inference, bounded SQL
 history, and explicit opt-in loading. Container acceptance trains an artifact from a
 known database history and reloads it through the consumer image.
+
+For v0.6, external review claims were verified against implementation and upstream
+documentation before adoption. Tests cover conflicting natural identities, publish ACK
+timeouts, configured model identity, persistent bounded MQTT connect properties,
+monitoring state and output, and the complete Compose ingestion smoke path. CI also runs a
+dependency audit. Generated review reports remain ignored build-time material.

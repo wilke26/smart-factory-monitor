@@ -1,10 +1,12 @@
 # Smart Factory Monitor
 
-Version **0.5.1** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.6.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
-atomically persists readings plus findings in TimescaleDB.
+atomically persists readings plus findings in TimescaleDB. v0.6 hardens identity-conflict
+handling, MQTT delivery, local network exposure, schema migrations, dependency auditing,
+health probes, and metrics.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
@@ -21,6 +23,9 @@ This starts:
 - `simulator`: publishes to `factory/hall-a/press-01/telemetry`;
 - `schema-migrate`: applies the idempotent v0.4 anomaly schema and exits successfully;
 - `consumer`: validates messages, evaluates enabled detectors, and stores results.
+
+Published host ports bind to `127.0.0.1` only. The consumer exposes liveness, readiness,
+and Prometheus metrics on `http://127.0.0.1:8000`.
 
 ML is disabled by default until a machine-specific model has been trained. Known safety
 rules are always active.
@@ -111,7 +116,13 @@ are distinct from the wider transport-validity bounds in the data contract.
 MQTT acknowledgements are manual. Valid readings are acknowledged only after the
 database transaction succeeds. Invalid input is acknowledged and discarded so poison
 messages do not loop. The `(machine_id, recorded_at)` primary key and `ON CONFLICT DO
-NOTHING` make QoS 1 redelivery idempotent.
+NOTHING` make exact QoS 1 redelivery idempotent. If the same identity arrives with
+different measurement values, the consumer logs an identity conflict, stores no
+inconsistent findings, and acknowledges the permanently invalid collision.
+
+The consumer requests a bounded MQTT 5 receive window and a persistent broker session.
+The stable consumer client ID and configurable session expiry allow the broker to retain
+QoS messages across temporary disconnects and process restarts.
 
 ## Multivariate ML anomaly detection
 
@@ -167,6 +178,8 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `MQTT_CLIENT_ID` | `smart-factory-simulator` | Publisher client ID |
 | `MQTT_CONSUMER_CLIENT_ID` | `smart-factory-consumer` | Subscriber client ID |
 | `MQTT_TOPIC_FILTER` | `factory/+/+/telemetry` | Consumer subscription |
+| `MQTT_SESSION_EXPIRY_SECONDS` | `86400` | Broker session retention for the consumer |
+| `MQTT_RECEIVE_MAXIMUM` | `20` | Maximum unacknowledged inbound QoS messages |
 | `FACTORY_AREA` | `hall-a` | Simulator area/topic segment |
 | `MACHINE_ID` | `press-01` | Simulator machine/topic segment |
 | `PUBLISH_INTERVAL_SECONDS` | `2.0` | Publish interval |
@@ -186,9 +199,28 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `ML_CONTAMINATION` | `0.05` | Expected anomaly fraction during training |
 | `ML_MINIMUM_TRAINING_SAMPLES` | `100` | Minimum history required to train |
 | `ML_TRAINING_LIMIT` | `10000` | Maximum recent readings loaded for training |
+| `MONITORING_HOST` | `0.0.0.0` | Monitoring listener inside the consumer container |
+| `MONITORING_PORT` | `8000` | Monitoring listener port |
+| `MONITORING_HOST_PORT` | `8000` | Loopback-only Compose host port |
 
 > The local Mosquitto configuration permits anonymous, unencrypted access. Do not expose
 > port 1883 to an untrusted network.
+
+## Health and metrics
+
+The monitoring listener uses only Python's standard library and exposes aggregate data;
+it does not include machine IDs or raw payloads.
+
+```bash
+curl --fail http://127.0.0.1:8000/healthz
+curl --fail http://127.0.0.1:8000/readyz
+curl --fail http://127.0.0.1:8000/metrics
+```
+
+- `/healthz` reports that the process and monitoring thread are alive.
+- `/readyz` succeeds only while the database pool is ready and MQTT is subscribed.
+- `/metrics` exports connection gauges, message outcomes, processing duration, inserts,
+  and anomaly counts in Prometheus text format.
 
 ## Local development
 
@@ -201,16 +233,17 @@ python -m pip install -e '.[dev]'
 ruff check .
 ruff format --check .
 mypy
+python -m pip_audit
 pytest --cov=smart_factory
 python -m build
 docker compose config --quiet
 ```
 
-Tests cover the contract, configuration, application service, logging, MQTT callbacks,
+Tests cover the contract, configuration, application service, observability, MQTT callbacks,
 valid/invalid ingestion pipelines, rule boundaries, model training/inference and artifact
 validation, atomic idempotent persistence, and property-based JSON round trips. CI checks
-Python 3.12 and 3.13, trains and reloads a model in Docker, and enforces at least 80%
-branch-aware coverage.
+Python 3.12 and 3.13, audits dependencies, trains and reloads a model in Docker, runs the
+complete Compose ingestion path, and enforces at least 80% branch-aware coverage.
 
 Run the services outside Docker with a reachable broker:
 
@@ -230,7 +263,11 @@ MQTT_HOST=localhost smart-factory-simulator
 - [ADR 0004: TimescaleDB persistence](docs/adr/0004-timescaledb-telemetry-persistence.md)
 - [ADR 0005: deterministic rules](docs/adr/0005-rule-based-anomaly-detection.md)
 - [ADR 0006: offline Isolation Forest](docs/adr/0006-offline-isolation-forest.md)
+- [ADR 0007: v0.6 operational hardening](docs/adr/0007-operational-hardening.md)
+- [Operations and observability](docs/operations.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-v0.6 can add metrics, alert routing, dependency scanning, TLS/secrets, model evaluation,
-drift monitoring, and production deployment hardening.
+v0.7 can add TLS identities and ACLs for a shared deployment, alert routing, model
+evaluation and drift monitoring, retention/compression policies, and a per-machine model
+registry. Local Compose remains a development environment rather than a production
+deployment.

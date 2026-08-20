@@ -38,7 +38,10 @@ require a versioned contract/topic decision before producers and consumers chang
 | `power_kw` | `power_kw` |
 | `production_rate` | `production_rate` |
 
-The database adds `ingested_at`. `(machine_id, recorded_at)` is the idempotency key.
+The database adds `ingested_at`. `(machine_id, recorded_at)` is the idempotency key. An
+exact duplicate is accepted idempotently. Reusing that identity with different measurement
+values is a permanent contract conflict: it is logged and acknowledged without storing
+findings that would disagree with the original row.
 Anomaly findings reference that same key; their evidence contract is documented in
 [anomaly-detection.md](anomaly-detection.md).
 

@@ -1,5 +1,6 @@
 import threading
 from contextlib import suppress
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -84,6 +85,7 @@ def test_main_retries_database_startup_timeout() -> None:
         patch.object(consumer_main.threading, "Event", return_value=stop_event),
         patch.object(consumer_main.signal, "signal"),
         patch.object(consumer_main, "run", side_effect=PoolTimeout("database unavailable")),
+        patch.object(consumer_main, "MonitoringServer"),
         patch.object(consumer_main, "LOGGER", logger),
     ):
         consumer_main.main()
@@ -103,6 +105,7 @@ def test_main_does_not_retry_permanent_ml_artifact_error() -> None:
         patch.object(consumer_main, "configure_logging"),
         patch.object(consumer_main.threading, "Event", return_value=stop_event),
         patch.object(consumer_main.signal, "signal"),
+        patch.object(consumer_main, "MonitoringServer"),
         patch.object(
             consumer_main,
             "run",
@@ -132,4 +135,7 @@ def test_loads_ml_model_only_when_enabled(load: Mock) -> None:
 
     build_anomaly_detector(settings(), ml_settings(enabled=True))
 
-    load.assert_called_once()
+    load.assert_called_once_with(
+        Path("/models/model.joblib"),
+        expected_machine_id="press-01",
+    )

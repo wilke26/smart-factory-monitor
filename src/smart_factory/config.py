@@ -90,6 +90,10 @@ class Settings:
     maximum_vibration_mm_s: float
     maximum_power_kw: float
     minimum_production_rate: int
+    mqtt_session_expiry_seconds: int = 86_400
+    mqtt_receive_maximum: int = 20
+    monitoring_host: str = "0.0.0.0"
+    monitoring_port: int = 8000
 
     @property
     def topic(self) -> str:
@@ -140,4 +144,10 @@ class Settings:
             maximum_vibration_mm_s=maximum_vibration,
             maximum_power_kw=maximum_power,
             minimum_production_rate=minimum_production,
+            mqtt_session_expiry_seconds=_required_range(
+                "MQTT_SESSION_EXPIRY_SECONDS", "86400", 1, 2_147_483_647
+            ),
+            mqtt_receive_maximum=_required_range("MQTT_RECEIVE_MAXIMUM", "20", 1, 65_535),
+            monitoring_host=os.getenv("MONITORING_HOST", "0.0.0.0"),
+            monitoring_port=_required_range("MONITORING_PORT", "8000", 1, 65_535),
         )

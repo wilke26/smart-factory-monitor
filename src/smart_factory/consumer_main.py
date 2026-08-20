@@ -17,6 +17,7 @@ from smart_factory.domain.services.anomaly_detection import (
 from smart_factory.infrastructure.database.telemetry_repository import PsycopgTelemetryRepository
 from smart_factory.infrastructure.mqtt.consumer import MqttTelemetryConsumer
 from smart_factory.logging import configure_logging
+from smart_factory.observability import MonitoringServer, RuntimeObservability
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +43,12 @@ def build_anomaly_detector(
             IsolationForestAnomalyDetector,
         )
 
-        detectors.append(IsolationForestAnomalyDetector.load(Path(ml_settings.model_path)))
+        detectors.append(
+            IsolationForestAnomalyDetector.load(
+                Path(ml_settings.model_path),
+                expected_machine_id=ml_settings.machine_id,
+            )
+        )
     return CompositeAnomalyDetector(tuple(detectors))
 
 
@@ -50,6 +56,7 @@ def run(
     settings: Settings,
     stop_event: threading.Event,
     ml_settings: MlSettings | None = None,
+    observability: RuntimeObservability | None = None,
 ) -> None:
     """Consume telemetry until a termination signal is received."""
     detector = build_anomaly_detector(settings, ml_settings or MlSettings.from_env())
@@ -58,7 +65,12 @@ def run(
         min_size=settings.database_pool_min_size,
         max_size=settings.database_pool_max_size,
     )
-    service = TelemetryApplicationService(repository=repository, anomaly_detector=detector)
+    runtime_observability = observability or RuntimeObservability()
+    service = TelemetryApplicationService(
+        repository=repository,
+        anomaly_detector=detector,
+        observer=runtime_observability,
+    )
     consumer = MqttTelemetryConsumer(
         settings.mqtt_host,
         settings.mqtt_port,
@@ -67,14 +79,22 @@ def run(
         service,
         qos=settings.mqtt_qos,
         keepalive=settings.mqtt_keepalive,
+        session_expiry_seconds=settings.mqtt_session_expiry_seconds,
+        receive_maximum=settings.mqtt_receive_maximum,
+        on_connection_change=runtime_observability.set_mqtt_connected,
+        on_message_outcome=runtime_observability.record_mqtt_outcome,
     )
     try:
+        runtime_observability.set_database_ready(False)
         repository.open(timeout=settings.database_connect_timeout_seconds)
+        runtime_observability.set_database_ready(True)
         consumer.connect()
         stop_event.wait()
     finally:
         consumer.close()
+        runtime_observability.set_mqtt_connected(False)
         repository.close()
+        runtime_observability.set_database_ready(False)
 
 
 def main() -> None:
@@ -91,16 +111,18 @@ def main() -> None:
     signal.signal(signal.SIGINT, request_stop)
 
     retry_delay = 1.0
-    while not stop_event.is_set():
-        try:
-            run(settings, stop_event)
-        except (ConnectionError, OSError, OperationalError) as error:
-            LOGGER.warning(
-                "service_unavailable",
-                extra={"reason": str(error), "retry_seconds": retry_delay},
-            )
-            stop_event.wait(retry_delay)
-            retry_delay = min(retry_delay * 2, 30.0)
+    observability = RuntimeObservability()
+    with MonitoringServer(observability, settings.monitoring_host, settings.monitoring_port):
+        while not stop_event.is_set():
+            try:
+                run(settings, stop_event, observability=observability)
+            except (ConnectionError, OSError, OperationalError) as error:
+                LOGGER.warning(
+                    "service_unavailable",
+                    extra={"reason": str(error), "retry_seconds": retry_delay},
+                )
+                stop_event.wait(retry_delay)
+                retry_delay = min(retry_delay * 2, 30.0)
 
 
 if __name__ == "__main__":
