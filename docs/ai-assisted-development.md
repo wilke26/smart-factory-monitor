@@ -32,3 +32,8 @@ dependency audit. Generated review reports remain ignored build-time material.
 For v0.7, tests additionally cover multi-machine configuration, exact registry activation,
 missing-model fail-fast behavior, machine-aware dispatch, batch training targets, and
 bounded ML coverage metrics.
+
+For v0.8, tests cover credential/TLS configuration invariants and verify that certificate
+validation is never disabled. CI renders both Kubernetes bases, while deployment acceptance
+checks non-root/read-only container policy, secret references, probes, Azure Files storage,
+and the existing local Compose path.

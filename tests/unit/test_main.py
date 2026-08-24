@@ -36,8 +36,32 @@ class RecordingPublisher:
     published: ClassVar[list[tuple[str, bytes, int]]] = []
     stop_event: threading.Event
 
-    def __init__(self, host: str, port: int, client_id: str, *, keepalive: int = 60) -> None:
-        del host, port, client_id, keepalive
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        client_id: str,
+        *,
+        keepalive: int = 60,
+        username: str | None = None,
+        password: str | None = None,
+        tls_enabled: bool = False,
+        ca_cert_path: str | None = None,
+        client_cert_path: str | None = None,
+        client_key_path: str | None = None,
+    ) -> None:
+        del (
+            host,
+            port,
+            client_id,
+            keepalive,
+            username,
+            password,
+            tls_enabled,
+            ca_cert_path,
+            client_cert_path,
+            client_key_path,
+        )
 
     def __enter__(self) -> Self:
         return self

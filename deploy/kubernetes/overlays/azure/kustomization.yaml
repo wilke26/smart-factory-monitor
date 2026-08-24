@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: smart-factory
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+images:
+  - name: smart-factory-monitor
+    newName: SMART_FACTORY_ACR.azurecr.io/smart-factory-monitor
+    newTag: 0.8.0
+
+patches:
+  - path: model-registry-pvc-patch.yaml

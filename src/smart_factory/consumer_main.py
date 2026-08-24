@@ -88,6 +88,12 @@ def run(
         keepalive=settings.mqtt_keepalive,
         session_expiry_seconds=settings.mqtt_session_expiry_seconds,
         receive_maximum=settings.mqtt_receive_maximum,
+        username=settings.mqtt_security.username,
+        password=settings.mqtt_security.password,
+        tls_enabled=settings.mqtt_security.tls_enabled,
+        ca_cert_path=settings.mqtt_security.ca_cert_path,
+        client_cert_path=settings.mqtt_security.client_cert_path,
+        client_key_path=settings.mqtt_security.client_key_path,
         on_connection_change=runtime_observability.set_mqtt_connected,
         on_message_outcome=runtime_observability.record_mqtt_outcome,
     )

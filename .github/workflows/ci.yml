@@ -47,6 +47,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate Docker Compose configuration
         run: docker compose config --quiet
+      - uses: azure/setup-kubectl@v4
+      - name: Render Kubernetes deployment overlays
+        run: |
+          kubectl kustomize deploy/kubernetes/base > /tmp/smart-factory-base.yaml
+          kubectl kustomize deploy/kubernetes/overlays/azure > /tmp/smart-factory-azure.yaml
+          grep -q 'azurefile-csi-premium' /tmp/smart-factory-azure.yaml
+          grep -q 'storage: 100Gi' /tmp/smart-factory-azure.yaml
+          grep -q 'runAsNonRoot: true' /tmp/smart-factory-azure.yaml
+          grep -q 'runAsUser: 10001' /tmp/smart-factory-azure.yaml
       - name: Build application images
         run: docker compose build simulator consumer model-trainer
       - name: Start database and train an ML artifact

@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - consumer-deployment.yaml
+  - consumer-service.yaml
+  - simulator-deployment.yaml
+  - model-registry-pvc.yaml
+
+configMapGenerator:
+  - name: smart-factory-config
+    literals:
+      - MQTT_HOST=mqtt.example.internal
+      - MQTT_PORT=8883
+      - MQTT_KEEPALIVE=60
+      - MQTT_QOS=1
+      - MQTT_TOPIC_FILTER=factory/+/+/telemetry
+      - MQTT_SESSION_EXPIRY_SECONDS=86400
+      - MQTT_RECEIVE_MAXIMUM=20
+      - MQTT_TLS_ENABLED=true
+      - MQTT_TLS_CA_CERT_PATH=/etc/mqtt-tls/ca.crt
+      - MQTT_TLS_CLIENT_CERT_PATH=/etc/mqtt-tls/tls.crt
+      - MQTT_TLS_CLIENT_KEY_PATH=/etc/mqtt-tls/tls.key
+      - FACTORY_AREA=hall-a
+      - MACHINE_ID=press-01
+      - PUBLISH_INTERVAL_SECONDS=2.0
+      - LOG_LEVEL=INFO
+      - DATABASE_POOL_MIN_SIZE=1
+      - DATABASE_POOL_MAX_SIZE=4
+      - DATABASE_CONNECT_TIMEOUT_SECONDS=10.0
+      - ML_ANOMALY_DETECTION_ENABLED=false
+      - ML_MODEL_DIRECTORY=/models
+      - ML_MACHINE_IDS=press-01
+      - MONITORING_HOST=0.0.0.0
+      - MONITORING_PORT=8000

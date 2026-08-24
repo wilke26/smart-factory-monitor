@@ -80,10 +80,10 @@ def test_main_retries_database_startup_timeout() -> None:
     logger = Mock()
 
     with (
-        patch.object(consumer_main.Settings, "from_env", return_value=settings()),
+        patch("smart_factory.consumer_main.Settings.from_env", return_value=settings()),
         patch.object(consumer_main, "configure_logging"),
-        patch.object(consumer_main.threading, "Event", return_value=stop_event),
-        patch.object(consumer_main.signal, "signal"),
+        patch("smart_factory.consumer_main.threading.Event", return_value=stop_event),
+        patch("smart_factory.consumer_main.signal.signal"),
         patch.object(consumer_main, "run", side_effect=PoolTimeout("database unavailable")),
         patch.object(consumer_main, "MonitoringServer"),
         patch.object(consumer_main, "LOGGER", logger),
@@ -101,10 +101,10 @@ def test_main_does_not_retry_permanent_ml_artifact_error() -> None:
     logger = Mock()
 
     with (
-        patch.object(consumer_main.Settings, "from_env", return_value=settings()),
+        patch("smart_factory.consumer_main.Settings.from_env", return_value=settings()),
         patch.object(consumer_main, "configure_logging"),
-        patch.object(consumer_main.threading, "Event", return_value=stop_event),
-        patch.object(consumer_main.signal, "signal"),
+        patch("smart_factory.consumer_main.threading.Event", return_value=stop_event),
+        patch("smart_factory.consumer_main.signal.signal"),
         patch.object(consumer_main, "MonitoringServer"),
         patch.object(
             consumer_main,

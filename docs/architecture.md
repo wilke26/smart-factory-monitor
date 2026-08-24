@@ -1,12 +1,13 @@
-# Architecture v0.7
+# Architecture v0.8
 
 ## Scope
 
-Version 0.7 retains the v0.6 operational hardening and closes the mismatch between a
-multi-machine MQTT subscription and the former single-machine ML composition. A trusted
-registry now loads an explicit model set and dispatches inference by machine identity.
-It deliberately excludes online learning, a business HTTP API, automatic model promotion,
-and production model operations.
+Version 0.8 retains the machine-model registry and adds a deployment security boundary.
+Both MQTT adapters can authenticate and use server-verified TLS or mutual TLS. Hardened
+Kubernetes manifests run the two application processes as a fixed non-root identity with
+read-only root filesystems, explicit resources, probes, external secrets, and a shared
+model volume. Managed MQTT, PostgreSQL/TimescaleDB, PKI, and secret lifecycle remain
+deployment-owned dependencies.
 
 ```text
 Offline path                         Online path
@@ -78,5 +79,13 @@ creating a machine-ID metric label.
 
 Isolation Forest detects statistical rarity, not equipment failure and not causality.
 Training data quality, hold-out evaluation, drift, model approval, registry/signing,
-alerts, production secrets, TLS/client identities, backups, retention/compression,
-model evaluation, and deployment automation remain explicit v0.8+ work.
+alerts, backups, retention/compression, model evaluation, broker ACL provisioning,
+managed-service infrastructure, and automatic deployment remain explicit v0.9+ work.
+
+## Deployment boundary
+
+The base Kubernetes manifests deploy only the consumer, simulator, monitoring service,
+and model-registry claim. They do not embed a broker, database, passwords, certificates,
+or production SQL migration credentials. Runtime values come from a ConfigMap and named
+Secrets; the Azure overlay selects an Azure Files CSI storage class and an ACR image.
+Database schema migration remains an explicit release prerequisite.

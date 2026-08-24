@@ -17,6 +17,7 @@ from smart_factory.application.ports.telemetry import (
 )
 from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.mqtt.publisher import MqttConnectionError
+from smart_factory.infrastructure.mqtt.security import configure_mqtt_security
 
 
 class MqttTelemetryConsumer:
@@ -35,6 +36,12 @@ class MqttTelemetryConsumer:
         connect_timeout: float = 10.0,
         session_expiry_seconds: int = 86_400,
         receive_maximum: int = 20,
+        username: str | None = None,
+        password: str | None = None,
+        tls_enabled: bool = False,
+        ca_cert_path: str | None = None,
+        client_cert_path: str | None = None,
+        client_key_path: str | None = None,
         on_connection_change: Callable[[bool], None] | None = None,
         on_message_outcome: Callable[[str], None] | None = None,
         logger: logging.Logger | None = None,
@@ -63,6 +70,15 @@ class MqttTelemetryConsumer:
         self._client.on_message = self._on_message
         self._client.manual_ack_set(True)
         self._client.reconnect_delay_set(min_delay=1, max_delay=30)
+        configure_mqtt_security(
+            self._client,
+            username=username,
+            password=password,
+            tls_enabled=tls_enabled,
+            ca_cert_path=ca_cert_path,
+            client_cert_path=client_cert_path,
+            client_key_path=client_key_path,
+        )
 
     def connect(self) -> None:
         """Connect and wait until the subscription has been registered."""

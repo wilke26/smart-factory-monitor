@@ -7,6 +7,11 @@ services remain reachable to each other through the internal Compose network. An
 MQTT and the development database credential are intentionally retained for the one-command
 local demonstration; neither is suitable for a shared environment.
 
+v0.8 supports username/password authentication, a custom CA, and optional client
+certificate authentication for external brokers. TLS uses normal hostname and trust-chain
+verification; there is no insecure-skip-verify setting. Client certificate and key paths
+must be provided together.
+
 ## Health probes
 
 The consumer exposes three endpoints on port 8000:
@@ -45,6 +50,6 @@ redelivery.
 
 ## Remaining production work
 
-A shared or production environment still needs TLS, client authentication and topic ACLs,
-managed secrets, backup/restore tests, alert rules, durable metric collection, migration
-rollback policy, TimescaleDB retention/compression, and model promotion/signing.
+A shared or production environment still needs broker-side topic ACL provisioning,
+managed secret rotation, backup/restore tests, alert rules, durable metric collection,
+migration rollback policy, TimescaleDB retention/compression, and model promotion/signing.

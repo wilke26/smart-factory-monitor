@@ -21,6 +21,12 @@ def run(settings: Settings, stop_event: threading.Event | None = None) -> None:
         settings.mqtt_port,
         settings.mqtt_client_id,
         keepalive=settings.mqtt_keepalive,
+        username=settings.mqtt_security.username,
+        password=settings.mqtt_security.password,
+        tls_enabled=settings.mqtt_security.tls_enabled,
+        ca_cert_path=settings.mqtt_security.ca_cert_path,
+        client_cert_path=settings.mqtt_security.client_cert_path,
+        client_key_path=settings.mqtt_security.client_key_path,
     )
 
     LOGGER.info(

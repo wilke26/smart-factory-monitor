@@ -1,6 +1,8 @@
+from pathlib import Path
+
 import pytest
 
-from smart_factory.config import MlSettings, Settings
+from smart_factory.config import MlSettings, MqttSecuritySettings, Settings
 
 
 def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -14,6 +16,12 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
         "MQTT_TOPIC_FILTER",
         "MQTT_SESSION_EXPIRY_SECONDS",
         "MQTT_RECEIVE_MAXIMUM",
+        "MQTT_USERNAME",
+        "MQTT_PASSWORD",
+        "MQTT_TLS_ENABLED",
+        "MQTT_TLS_CA_CERT_PATH",
+        "MQTT_TLS_CLIENT_CERT_PATH",
+        "MQTT_TLS_CLIENT_KEY_PATH",
         "FACTORY_AREA",
         "MACHINE_ID",
         "PUBLISH_INTERVAL_SECONDS",
@@ -41,6 +49,7 @@ def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatc
     assert settings.mqtt_topic_filter == "factory/+/+/telemetry"
     assert settings.mqtt_session_expiry_seconds == 86_400
     assert settings.mqtt_receive_maximum == 20
+    assert settings.mqtt_security == MqttSecuritySettings()
     assert settings.database_pool_min_size == 1
     assert settings.database_pool_max_size == 4
     assert settings.database_url.endswith("@localhost:5432/smart_factory")
@@ -96,6 +105,69 @@ def test_rejects_empty_topic_filter(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValueError, match="must not be empty"):
         Settings.from_env()
+
+
+def test_reads_mqtt_credentials_and_mutual_tls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ca_cert = tmp_path / "ca.crt"
+    client_cert = tmp_path / "client.crt"
+    client_key = tmp_path / "client.key"
+    for path in (ca_cert, client_cert, client_key):
+        path.touch()
+    monkeypatch.setenv("MQTT_USERNAME", "simulator")
+    monkeypatch.setenv("MQTT_PASSWORD", "secret")
+    monkeypatch.setenv("MQTT_TLS_ENABLED", "true")
+    monkeypatch.setenv("MQTT_TLS_CA_CERT_PATH", str(ca_cert))
+    monkeypatch.setenv("MQTT_TLS_CLIENT_CERT_PATH", str(client_cert))
+    monkeypatch.setenv("MQTT_TLS_CLIENT_KEY_PATH", str(client_key))
+
+    assert MqttSecuritySettings.from_env() == MqttSecuritySettings(
+        username="simulator",
+        password="secret",
+        tls_enabled=True,
+        ca_cert_path=str(ca_cert),
+        client_cert_path=str(client_cert),
+        client_key_path=str(client_key),
+    )
+
+
+@pytest.mark.parametrize(
+    ("environment", "message"),
+    [
+        ({"MQTT_PASSWORD": "secret"}, "requires MQTT_USERNAME"),
+        ({"MQTT_TLS_CLIENT_CERT_PATH": "/certs/client.crt"}, "configured together"),
+        ({"MQTT_TLS_CLIENT_KEY_PATH": "/certs/client.key"}, "configured together"),
+        ({"MQTT_TLS_CA_CERT_PATH": "/certs/ca.crt"}, "MQTT_TLS_ENABLED=true"),
+    ],
+)
+def test_rejects_incomplete_mqtt_security_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    environment: dict[str, str],
+    message: str,
+) -> None:
+    for name in (
+        "MQTT_USERNAME",
+        "MQTT_PASSWORD",
+        "MQTT_TLS_ENABLED",
+        "MQTT_TLS_CA_CERT_PATH",
+        "MQTT_TLS_CLIENT_CERT_PATH",
+        "MQTT_TLS_CLIENT_KEY_PATH",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError, match=message):
+        MqttSecuritySettings.from_env()
+
+
+def test_rejects_missing_mqtt_certificate_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MQTT_TLS_ENABLED", "true")
+    monkeypatch.setenv("MQTT_TLS_CA_CERT_PATH", "/missing/ca.crt")
+
+    with pytest.raises(ValueError, match="must identify a readable file"):
+        MqttSecuritySettings.from_env()
 
 
 def test_rejects_invalid_database_pool_range(monkeypatch: pytest.MonkeyPatch) -> None:

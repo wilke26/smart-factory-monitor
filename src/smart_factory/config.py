@@ -2,8 +2,9 @@
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
+from pathlib import Path
 
 _MACHINE_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -39,6 +40,53 @@ def _required_boolean(name: str, default: str) -> bool:
     if text in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"{name} must be a boolean")
+
+
+def _optional_text(name: str) -> str | None:
+    value = os.getenv(name, "").strip()
+    return value or None
+
+
+@dataclass(frozen=True, slots=True)
+class MqttSecuritySettings:
+    """Optional broker credentials and verified TLS client material."""
+
+    username: str | None = None
+    password: str | None = field(default=None, repr=False)
+    tls_enabled: bool = False
+    ca_cert_path: str | None = None
+    client_cert_path: str | None = None
+    client_key_path: str | None = None
+
+    @classmethod
+    def from_env(cls) -> "MqttSecuritySettings":
+        username = _optional_text("MQTT_USERNAME")
+        password = _optional_text("MQTT_PASSWORD")
+        tls_enabled = _required_boolean("MQTT_TLS_ENABLED", "false")
+        ca_cert_path = _optional_text("MQTT_TLS_CA_CERT_PATH")
+        client_cert_path = _optional_text("MQTT_TLS_CLIENT_CERT_PATH")
+        client_key_path = _optional_text("MQTT_TLS_CLIENT_KEY_PATH")
+        if password is not None and username is None:
+            raise ValueError("MQTT_PASSWORD requires MQTT_USERNAME")
+        if (client_cert_path is None) != (client_key_path is None):
+            raise ValueError("MQTT TLS client certificate and key must be configured together")
+        if not tls_enabled and any((ca_cert_path, client_cert_path, client_key_path)):
+            raise ValueError("MQTT TLS certificate paths require MQTT_TLS_ENABLED=true")
+        for name, path in (
+            ("MQTT_TLS_CA_CERT_PATH", ca_cert_path),
+            ("MQTT_TLS_CLIENT_CERT_PATH", client_cert_path),
+            ("MQTT_TLS_CLIENT_KEY_PATH", client_key_path),
+        ):
+            if path is not None and (not Path(path).is_file() or not os.access(path, os.R_OK)):
+                raise ValueError(f"{name} must identify a readable file")
+        return cls(
+            username=username,
+            password=password,
+            tls_enabled=tls_enabled,
+            ca_cert_path=ca_cert_path,
+            client_cert_path=client_cert_path,
+            client_key_path=client_key_path,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +163,7 @@ class Settings:
     mqtt_receive_maximum: int = 20
     monitoring_host: str = "0.0.0.0"
     monitoring_port: int = 8000
+    mqtt_security: MqttSecuritySettings = field(default_factory=MqttSecuritySettings)
 
     @property
     def topic(self) -> str:
@@ -171,4 +220,5 @@ class Settings:
             mqtt_receive_maximum=_required_range("MQTT_RECEIVE_MAXIMUM", "20", 1, 65_535),
             monitoring_host=os.getenv("MONITORING_HOST", "0.0.0.0"),
             monitoring_port=_required_range("MONITORING_PORT", "8000", 1, 65_535),
+            mqtt_security=MqttSecuritySettings.from_env(),
         )

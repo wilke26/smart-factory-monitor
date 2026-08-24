@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smart-factory-simulator
+  labels:
+    app.kubernetes.io/name: smart-factory-simulator
+    app.kubernetes.io/part-of: smart-factory-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: smart-factory-simulator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: smart-factory-simulator
+        app.kubernetes.io/part-of: smart-factory-monitor
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: simulator
+          image: smart-factory-monitor:0.8.0
+          imagePullPolicy: IfNotPresent
+          command: ["smart-factory-simulator"]
+          envFrom:
+            - configMapRef:
+                name: smart-factory-config
+          env:
+            - name: MQTT_CLIENT_ID
+              value: smart-factory-simulator-press-01
+            - name: MQTT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: smart-factory-runtime
+                  key: simulator-mqtt-username
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: smart-factory-runtime
+                  key: simulator-mqtt-password
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: mqtt-tls
+              mountPath: /etc/mqtt-tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: mqtt-tls
+          secret:
+            secretName: simulator-mqtt-tls
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {}

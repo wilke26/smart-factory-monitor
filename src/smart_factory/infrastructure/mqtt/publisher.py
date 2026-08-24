@@ -10,6 +10,8 @@ from paho.mqtt.enums import CallbackAPIVersion
 from paho.mqtt.properties import Properties
 from paho.mqtt.reasoncodes import ReasonCode
 
+from smart_factory.infrastructure.mqtt.security import configure_mqtt_security
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -28,6 +30,12 @@ class MqttPublisher:
         *,
         keepalive: int = 60,
         connect_timeout: float = 10.0,
+        username: str | None = None,
+        password: str | None = None,
+        tls_enabled: bool = False,
+        ca_cert_path: str | None = None,
+        client_cert_path: str | None = None,
+        client_key_path: str | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -43,6 +51,15 @@ class MqttPublisher:
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.reconnect_delay_set(min_delay=1, max_delay=30)
+        configure_mqtt_security(
+            self._client,
+            username=username,
+            password=password,
+            tls_enabled=tls_enabled,
+            ca_cert_path=ca_cert_path,
+            client_cert_path=client_cert_path,
+            client_key_path=client_key_path,
+        )
 
     def connect(self) -> None:
         """Connect and wait until the broker acknowledges the session."""

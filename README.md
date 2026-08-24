@@ -1,13 +1,15 @@
 # Smart Factory Monitor
 
-Version **0.7.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.8.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
 atomically persists readings plus findings in TimescaleDB. v0.6 hardens identity-conflict
 handling, MQTT delivery, local network exposure, schema migrations, dependency auditing,
 health probes, and metrics. v0.7 adds an explicit multi-machine model registry so one
-consumer can safely route each reading to its configured machine-specific model.
+consumer can safely route each reading to its configured machine-specific model. v0.8
+adds verified MQTT TLS/mTLS, broker credentials, and a hardened Kubernetes/AKS deployment
+baseline without committing secrets or certificates.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
@@ -185,6 +187,12 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `MQTT_TOPIC_FILTER` | `factory/+/+/telemetry` | Consumer subscription |
 | `MQTT_SESSION_EXPIRY_SECONDS` | `86400` | Broker session retention for the consumer |
 | `MQTT_RECEIVE_MAXIMUM` | `20` | Maximum unacknowledged inbound QoS messages |
+| `MQTT_USERNAME` | empty | Optional broker identity |
+| `MQTT_PASSWORD` | empty | Optional broker password; requires a username |
+| `MQTT_TLS_ENABLED` | `false` | Enable verified TLS |
+| `MQTT_TLS_CA_CERT_PATH` | empty | Optional private CA bundle |
+| `MQTT_TLS_CLIENT_CERT_PATH` | empty | Optional mTLS client certificate |
+| `MQTT_TLS_CLIENT_KEY_PATH` | empty | Optional mTLS private key; paired with certificate |
 | `FACTORY_AREA` | `hall-a` | Simulator area/topic segment |
 | `MACHINE_ID` | `press-01` | Simulator machine/topic segment |
 | `PUBLISH_INTERVAL_SECONDS` | `2.0` | Publish interval |
@@ -210,6 +218,9 @@ Copy `.env.example` to `.env` to override Compose defaults.
 
 > The local Mosquitto configuration permits anonymous, unencrypted access. Do not expose
 > port 1883 to an untrusted network.
+
+For a shared broker, set `MQTT_USERNAME` and `MQTT_PASSWORD`, enable TLS, and mount the
+required CA/client files. TLS hostname and certificate verification are never disabled.
 
 ## Health and metrics
 
@@ -243,6 +254,7 @@ python -m pip_audit
 pytest --cov=smart_factory
 python -m build
 docker compose config --quiet
+kubectl kustomize deploy/kubernetes/overlays/azure >/tmp/smart-factory-azure.yaml
 ```
 
 Tests cover the contract, configuration, application service, observability, MQTT callbacks,
@@ -271,11 +283,13 @@ MQTT_HOST=localhost smart-factory-simulator
 - [ADR 0006: offline Isolation Forest](docs/adr/0006-offline-isolation-forest.md)
 - [ADR 0007: v0.6 operational hardening](docs/adr/0007-operational-hardening.md)
 - [ADR 0008: explicit machine-model registry](docs/adr/0008-explicit-machine-model-registry.md)
+- [ADR 0009: verified MQTT identity and Kubernetes baseline](docs/adr/0009-secure-mqtt-kubernetes-baseline.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
+- [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-v0.8 can add TLS identities and ACLs for a shared deployment, alert routing, offline model
-evaluation and drift thresholds, retention/compression policies, and Kubernetes/Azure
-deployment assets. Local Compose remains a development environment rather than a
-production deployment.
+v0.9 can add broker-side ACL provisioning, alert routing, offline model evaluation and
+drift thresholds, retention/compression policies, signed image/model promotion, and
+infrastructure-as-code for managed dependencies. Local Compose remains a development
+environment rather than a production deployment.
