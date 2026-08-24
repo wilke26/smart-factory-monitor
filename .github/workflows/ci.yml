@@ -56,8 +56,18 @@ jobs:
           grep -q 'storage: 100Gi' /tmp/smart-factory-azure.yaml
           grep -q 'runAsNonRoot: true' /tmp/smart-factory-azure.yaml
           grep -q 'runAsUser: 10001' /tmp/smart-factory-azure.yaml
+          grep -q 'kind: NetworkPolicy' /tmp/smart-factory-azure.yaml
       - name: Build application images
-        run: docker compose build simulator consumer model-trainer
+        run: docker compose build simulator consumer model-key-init model-trainer
+      - name: Scan consumer image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: smart-factory-monitor-consumer:latest
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          scanners: vuln
+          severity: HIGH,CRITICAL
       - name: Start database and train an ML artifact
         run: |
           docker compose up -d --wait timescaledb
@@ -67,7 +77,20 @@ jobs:
             -c "INSERT INTO telemetry_readings (machine_id, recorded_at, temperature_c, vibration_mm_s, power_kw, production_rate) SELECT machine_id, NOW() - number * INTERVAL '1 second', 68 + (number % 5) * 0.1, 2.5 + (number % 7) * 0.02, 17 + (number % 3) * 0.1, 44 + (number % 2) FROM (VALUES ('press-01'), ('press-02')) AS machines(machine_id) CROSS JOIN generate_series(1, 120) AS number;"
           ML_MACHINE_IDS=press-01,press-02 docker compose --profile tools run --rm model-trainer
           docker compose run --rm --no-deps consumer python -c \
-            "from pathlib import Path; from smart_factory.infrastructure.ml.registry import MachineModelRegistry; MachineModelRegistry.load(Path('/models'))"
+            "from pathlib import Path; from smart_factory.infrastructure.ml.registry import MachineModelRegistry; MachineModelRegistry.load(Path('/models'), public_key_path=Path('/run/ml-signing/public/public.pem'))"
+          test "$(docker compose exec -T mosquitto sh -c 'find /mosquitto/config-generated -name "*.tmp" -print')" = ""
+          allowed_publish=$(docker compose exec -T mosquitto mosquitto_pub \
+            -d -V mqttv5 -h localhost -u smart-factory-simulator -P simulator_dev \
+            -q 1 -t factory/hall-a/press-01/telemetry -m '{}' 2>&1)
+          echo "$allowed_publish" | grep -q 'RC:0'
+          denied_publish=$(docker compose exec -T mosquitto mosquitto_pub \
+            -d -V mqttv5 -h localhost -u smart-factory-simulator -P simulator_dev \
+            -q 1 -t factory/hall-a/press-02/telemetry -m '{}' 2>&1)
+          echo "$denied_publish" | grep -q 'RC:135'
+          anonymous_publish=$(docker compose exec -T mosquitto mosquitto_pub \
+            -d -V mqttv5 -h localhost -q 1 \
+            -t factory/hall-a/press-01/telemetry -m '{}' 2>&1 || true)
+          echo "$anonymous_publish" | grep -q 'CONNACK (135)'
           ML_ANOMALY_DETECTION_ENABLED=true ML_MACHINE_IDS=press-01,press-02 docker compose up -d --wait mosquitto consumer simulator
           curl --fail --silent http://127.0.0.1:8000/readyz
           curl --fail --silent http://127.0.0.1:8000/metrics | grep -q 'smart_factory_ml_models_loaded 2'

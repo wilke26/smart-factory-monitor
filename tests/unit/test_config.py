@@ -212,6 +212,8 @@ def test_ml_defaults_to_explicitly_disabled(monkeypatch: pytest.MonkeyPatch) -> 
         "ML_CONTAMINATION",
         "ML_MINIMUM_TRAINING_SAMPLES",
         "ML_TRAINING_LIMIT",
+        "ML_SIGNATURE_PUBLIC_KEY_PATH",
+        "ML_SIGNING_PRIVATE_KEY_PATH",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -223,6 +225,36 @@ def test_ml_defaults_to_explicitly_disabled(monkeypatch: pytest.MonkeyPatch) -> 
     assert settings.machine_ids == ("press-01",)
     assert settings.minimum_training_samples == 100
     assert settings.training_limit == 10_000
+    assert settings.signature_public_key_path is None
+    assert settings.signing_private_key_path is None
+
+
+def test_reads_model_signing_key_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    public_key = tmp_path / "public.pem"
+    private_key = tmp_path / "private.pem"
+    public_key.touch()
+    private_key.touch()
+    monkeypatch.setenv("ML_SIGNATURE_PUBLIC_KEY_PATH", str(public_key))
+    monkeypatch.setenv("ML_SIGNING_PRIVATE_KEY_PATH", str(private_key))
+
+    settings = MlSettings.from_env()
+
+    assert settings.signature_public_key_path == str(public_key)
+    assert settings.signing_private_key_path == str(private_key)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["ML_SIGNATURE_PUBLIC_KEY_PATH", "ML_SIGNING_PRIVATE_KEY_PATH"],
+)
+def test_rejects_missing_model_signing_key_file(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    monkeypatch.setenv(name, "/missing/key.pem")
+
+    with pytest.raises(ValueError, match=f"{name} must identify a readable file"):
+        MlSettings.from_env()
 
 
 @pytest.mark.parametrize("value", ["maybe", "enabled"])

@@ -42,3 +42,11 @@ For v0.8.1, an external review claim about readiness was traced through the runt
 path. Regression tests verify that failed database operations make the consumer unready,
 successful operations restore readiness, and permanent identity conflicts do not create a
 false infrastructure outage.
+
+For v0.9, tests prove that model bytes are authenticated before joblib is called, tampered
+or missing signatures fail closed, key pairs are validated, and signing remains outside
+the consumer. Compose acceptance checks both an allowed telemetry path and a denied
+cross-machine publish. CI renders default-deny network policy, pins the image scanner by
+commit, and rejects high or critical vulnerabilities with an available fix in the built
+consumer image. Base container and third-party Compose image tags are resolved to
+immutable manifest digests.

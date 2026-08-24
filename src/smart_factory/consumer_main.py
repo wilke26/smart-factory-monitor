@@ -42,9 +42,15 @@ def build_anomaly_detector(
 
         from smart_factory.infrastructure.ml.registry import MachineModelRegistry
 
+        if ml_settings.signature_public_key_path is None:
+            raise ValueError(
+                "ML_SIGNATURE_PUBLIC_KEY_PATH is required when ML anomaly detection is enabled"
+            )
+
         registry = MachineModelRegistry.load(
             Path(ml_settings.model_directory),
             expected_machine_ids=ml_settings.machine_ids,
+            public_key_path=Path(ml_settings.signature_public_key_path),
             on_resolution=(observability.record_ml_resolution if observability else None),
         )
         if observability is not None:

@@ -23,5 +23,5 @@ incomplete ML coverage.
 - One consumer can safely apply different models across its multi-machine subscription.
 - The active model set is explicit and deployment failures are visible before readiness.
 - Machines without an active model still receive deterministic rule evaluation.
-- Model hot reload, version promotion, signatures, evaluation, and drift policy remain out
-  of scope.
+- v0.9 adds detached signatures and verification before deserialization. Model hot reload,
+  version promotion, key rotation, evaluation, and drift policy remain out of scope.

@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.8.1** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.9.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -11,7 +11,11 @@ consumer can safely route each reading to its configured machine-specific model.
 adds verified MQTT TLS/mTLS, broker credentials, and a hardened Kubernetes/AKS deployment
 baseline without committing secrets or certificates. v0.8.1 keeps runtime readiness
 accurate when the database becomes unavailable after startup and restores it after the
-next successful database operation.
+next successful database operation. v0.9 authenticates the bundled broker with
+least-privilege topic ACLs, signs every ML artifact with Ed25519 before publication,
+verifies it before deserialization, adds default-deny Kubernetes network policy, pins
+container bases by digest, and scans the built image for actionable high and critical
+vulnerabilities.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
@@ -27,6 +31,7 @@ This starts:
 - `timescaledb`: PostgreSQL 16 with the TimescaleDB extension on `localhost:5432`;
 - `simulator`: publishes to `factory/hall-a/press-01/telemetry`;
 - `schema-migrate`: applies the idempotent v0.4 anomaly schema and exits successfully;
+- `model-key-init`: creates or reuses the local Ed25519 model-signing key pair and exits;
 - `consumer`: validates messages, evaluates enabled detectors, and stores results.
 
 Published host ports bind to `127.0.0.1` only. The consumer exposes liveness, readiness,
@@ -42,7 +47,9 @@ Observe raw messages in another terminal:
 
 ```bash
 docker compose exec mosquitto \
-  mosquitto_sub -h localhost -t 'factory/+/+/telemetry' -v
+  mosquitto_sub -h localhost \
+  -u smart-factory-consumer -P consumer_dev \
+  -t 'factory/+/+/telemetry' -v
 ```
 
 Stop the stack with `Ctrl+C`, then run `docker compose down`.
@@ -144,18 +151,23 @@ ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
 ```
 
 The comma-separated `ML_MACHINE_IDS` setting controls both the training batch and the
-active registry. The trainer writes `<machine_id>.joblib` for each configured machine to
-the shared `ml-models` volume using an atomic replace. With ML enabled, the consumer
-requires every configured file and validates its filename-to-machine mapping, artifact
-format, feature order, machine identity, estimator type, and exact scikit-learn runtime
-version before serving. Extra stale files are not activated.
+active registry. The trainer writes `<machine_id>.joblib` and a detached
+`<machine_id>.joblib.sig` for each configured machine to the shared `ml-models` volume. It
+signs the exact serialized bytes with Ed25519 and publishes the signature and artifact
+using atomic replacement. With ML enabled, the consumer requires every configured pair,
+verifies the signature before any joblib/pickle deserialization, and then validates the
+filename-to-machine mapping, artifact format, feature order, machine identity, estimator
+type, and exact scikit-learn runtime version. Extra stale files are not activated.
 An enabled consumer fails fast with a dedicated artifact error if the model is missing,
 unreadable, or invalid; permanent model configuration failures never enter the
 infrastructure retry loop.
 
-The artifact uses joblib/pickle semantics. Only load artifacts produced by this project
-and stored in the trusted local model volume. Model promotion, signing, evaluation
-datasets, drift monitoring, and a registry remain production-hardening work.
+The artifact still uses joblib/pickle semantics. Signature verification prevents an
+untrusted or corrupted file from reaching the unsafe deserializer, provided the public
+verification key is distributed through a trusted channel and the signing private key
+remains restricted to the trainer. Signing proves provenance and integrity; it is not an
+approval workflow. Immutable promotion, rollback, evaluation datasets, and drift
+monitoring remain production-hardening work.
 
 ## Telemetry contract
 
@@ -191,6 +203,10 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `MQTT_RECEIVE_MAXIMUM` | `20` | Maximum unacknowledged inbound QoS messages |
 | `MQTT_USERNAME` | empty | Optional broker identity |
 | `MQTT_PASSWORD` | empty | Optional broker password; requires a username |
+| `SIMULATOR_MQTT_USERNAME` | `smart-factory-simulator` in Compose | Local publisher identity |
+| `SIMULATOR_MQTT_PASSWORD` | `simulator_dev` in Compose | Local publisher development password |
+| `CONSUMER_MQTT_USERNAME` | `smart-factory-consumer` in Compose | Local subscriber identity |
+| `CONSUMER_MQTT_PASSWORD` | `consumer_dev` in Compose | Local subscriber development password |
 | `MQTT_TLS_ENABLED` | `false` | Enable verified TLS |
 | `MQTT_TLS_CA_CERT_PATH` | empty | Optional private CA bundle |
 | `MQTT_TLS_CLIENT_CERT_PATH` | empty | Optional mTLS client certificate |
@@ -214,15 +230,21 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `ML_CONTAMINATION` | `0.05` | Expected anomaly fraction during training |
 | `ML_MINIMUM_TRAINING_SAMPLES` | `100` | Minimum history required to train |
 | `ML_TRAINING_LIMIT` | `10000` | Maximum recent readings loaded for training |
+| `ML_SIGNATURE_PUBLIC_KEY_PATH` | empty | Required Ed25519 public key for ML inference |
+| `ML_SIGNING_PRIVATE_KEY_PATH` | empty | Required Ed25519 private key for offline training |
 | `MONITORING_HOST` | `0.0.0.0` | Monitoring listener inside the consumer container |
 | `MONITORING_PORT` | `8000` | Monitoring listener port |
 | `MONITORING_HOST_PORT` | `8000` | Loopback-only Compose host port |
 
-> The local Mosquitto configuration permits anonymous, unencrypted access. Do not expose
-> port 1883 to an untrusted network.
+> The local Mosquitto configuration requires separate simulator and consumer credentials
+> and restricts both identities with topic ACLs, but it remains unencrypted and uses
+> documented development passwords. Do not expose port 1883 to an untrusted network.
 
-For a shared broker, set `MQTT_USERNAME` and `MQTT_PASSWORD`, enable TLS, and mount the
-required CA/client files. TLS hostname and certificate verification are never disabled.
+The simulator may publish only its exact configured telemetry topic. The consumer may
+read telemetry and the broker-version health topic but cannot publish. For a shared
+broker, provision equivalent server-side identities and ACLs, rotate managed credentials,
+enable TLS, and mount the required CA/client files. TLS hostname and certificate
+verification are never disabled.
 
 ## Health and metrics
 
@@ -260,10 +282,12 @@ kubectl kustomize deploy/kubernetes/overlays/azure >/tmp/smart-factory-azure.yam
 ```
 
 Tests cover the contract, configuration, application service, observability, MQTT callbacks,
-valid/invalid ingestion pipelines, rule boundaries, model training/inference and artifact
-validation, atomic idempotent persistence, and property-based JSON round trips. CI checks
-Python 3.12 and 3.13, audits dependencies, trains and reloads a model in Docker, runs the
-complete Compose ingestion path, and enforces at least 80% branch-aware coverage.
+valid/invalid ingestion pipelines, rule boundaries, model training/inference, pre-load
+signature verification, atomic idempotent persistence, and property-based JSON round
+trips. CI checks Python 3.12 and 3.13, audits dependencies, renders Kubernetes policy,
+scans the built consumer image, exercises a denied broker topic, trains and reloads a
+signed model in Docker, runs the complete Compose ingestion path, and enforces at least
+80% branch-aware coverage.
 
 Run the services outside Docker with a reachable broker:
 
@@ -278,7 +302,7 @@ MQTT_HOST=localhost smart-factory-simulator
 - [Data contract](docs/data-contract.md)
 - [Anomaly rules and findings](docs/anomaly-detection.md)
 - [ADR 0001: MQTT transport](docs/adr/0001-mqtt-for-telemetry-transport.md)
-- [ADR 0002: local anonymous broker](docs/adr/0002-anonymous-local-broker.md)
+- [ADR 0002: original local anonymous broker (superseded)](docs/adr/0002-anonymous-local-broker.md)
 - [ADR 0003: MQTT/application separation](docs/adr/0003-separate-mqtt-adapter-from-application-service.md)
 - [ADR 0004: TimescaleDB persistence](docs/adr/0004-timescaledb-telemetry-persistence.md)
 - [ADR 0005: deterministic rules](docs/adr/0005-rule-based-anomaly-detection.md)
@@ -286,12 +310,14 @@ MQTT_HOST=localhost smart-factory-simulator
 - [ADR 0007: v0.6 operational hardening](docs/adr/0007-operational-hardening.md)
 - [ADR 0008: explicit machine-model registry](docs/adr/0008-explicit-machine-model-registry.md)
 - [ADR 0009: verified MQTT identity and Kubernetes baseline](docs/adr/0009-secure-mqtt-kubernetes-baseline.md)
+- [ADR 0010: signed model artifacts](docs/adr/0010-signed-model-artifacts.md)
+- [ADR 0011: least-privilege runtime and supply-chain baseline](docs/adr/0011-least-privilege-runtime-and-supply-chain.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-v0.9 can add broker-side ACL provisioning, alert routing, offline model evaluation and
-drift thresholds, retention/compression policies, signed image/model promotion, and
-infrastructure-as-code for managed dependencies. Local Compose remains a development
+v0.10 can add alert routing, offline model evaluation and drift thresholds,
+retention/compression policies, immutable image/model promotion, backup/restore tests,
+and infrastructure-as-code for managed dependencies. Local Compose remains a development
 environment rather than a production deployment.

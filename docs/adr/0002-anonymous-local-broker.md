@@ -1,6 +1,6 @@
 # ADR-0002: Anonymous broker access is local-development only
 
-- Status: Accepted
+- Status: Superseded by ADR 0011
 - Date: 2026-08-12
 
 ## Context
@@ -19,5 +19,5 @@ for shared or internet-accessible environments.
 - Port 1883 must not be exposed on an untrusted network.
 - A production deployment must add TLS, per-client identity, authorization and managed
   secret/certificate rotation before use.
-- v0.8 adds client support and Kubernetes secret wiring for those controls; the bundled
-  local broker intentionally remains anonymous and loopback-only.
+- v0.8 added client support and Kubernetes secret wiring. v0.9 supersedes the anonymous
+  local decision with separate development identities and least-privilege topic ACLs.

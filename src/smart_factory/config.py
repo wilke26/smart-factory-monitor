@@ -99,6 +99,8 @@ class MlSettings:
     contamination: float
     minimum_training_samples: int
     training_limit: int
+    signature_public_key_path: str | None = None
+    signing_private_key_path: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls) -> "MlSettings":
@@ -127,6 +129,14 @@ class MlSettings:
         ]
         if invalid_machine_ids:
             raise ValueError(f"invalid machine ID in ML_MACHINE_IDS: {invalid_machine_ids[0]}")
+        signature_public_key_path = _optional_text("ML_SIGNATURE_PUBLIC_KEY_PATH")
+        signing_private_key_path = _optional_text("ML_SIGNING_PRIVATE_KEY_PATH")
+        for name, path in (
+            ("ML_SIGNATURE_PUBLIC_KEY_PATH", signature_public_key_path),
+            ("ML_SIGNING_PRIVATE_KEY_PATH", signing_private_key_path),
+        ):
+            if path is not None and (not Path(path).is_file() or not os.access(path, os.R_OK)):
+                raise ValueError(f"{name} must identify a readable file")
         return cls(
             enabled=_required_boolean("ML_ANOMALY_DETECTION_ENABLED", "false"),
             model_directory=model_directory,
@@ -134,6 +144,8 @@ class MlSettings:
             contamination=_required_float_range("ML_CONTAMINATION", "0.05", 0.001, 0.5),
             minimum_training_samples=minimum_samples,
             training_limit=training_limit,
+            signature_public_key_path=signature_public_key_path,
+            signing_private_key_path=signing_private_key_path,
         )
 
 

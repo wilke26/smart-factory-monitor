@@ -9,8 +9,11 @@ from smart_factory.train_model_main import run
 
 @patch("smart_factory.train_model_main.IsolationForestTrainer")
 @patch("smart_factory.train_model_main.PsycopgTelemetryRepository")
+@patch("smart_factory.train_model_main.ArtifactSigner.from_private_key_file")
 def test_trains_from_bounded_history_and_closes_repository(
-    repository_type: Mock, trainer_type: Mock
+    signer_from_file: Mock,
+    repository_type: Mock,
+    trainer_type: Mock,
 ) -> None:
     ml_settings = MlSettings(
         enabled=False,
@@ -19,6 +22,7 @@ def test_trains_from_bounded_history_and_closes_repository(
         contamination=0.03,
         minimum_training_samples=50,
         training_limit=500,
+        signing_private_key_path="/keys/private.pem",
     )
     readings = [Mock()] * 50
     repository_type.return_value.load_recent_readings.return_value = readings
@@ -41,7 +45,12 @@ def test_trains_from_bounded_history_and_closes_repository(
         call("press-01", 500),
         call("press-02", 500),
     ]
-    trainer_type.assert_called_once_with(contamination=0.03, minimum_samples=50)
+    signer_from_file.assert_called_once_with(Path("/keys/private.pem"))
+    trainer_type.assert_called_once_with(
+        contamination=0.03,
+        minimum_samples=50,
+        signer=signer_from_file.return_value,
+    )
     assert trainer_type.return_value.train.call_args_list == [
         call(readings, Path("/models/press-01.joblib")),
         call(readings, Path("/models/press-02.joblib")),
@@ -51,8 +60,11 @@ def test_trains_from_bounded_history_and_closes_repository(
 
 @patch("smart_factory.train_model_main.IsolationForestTrainer")
 @patch("smart_factory.train_model_main.PsycopgTelemetryRepository")
+@patch("smart_factory.train_model_main.ArtifactSigner.from_private_key_file")
 def test_does_not_replace_any_model_when_one_machine_lacks_history(
-    repository_type: Mock, trainer_type: Mock
+    signer_from_file: Mock,
+    repository_type: Mock,
+    trainer_type: Mock,
 ) -> None:
     ml_settings = MlSettings(
         enabled=False,
@@ -61,6 +73,7 @@ def test_does_not_replace_any_model_when_one_machine_lacks_history(
         contamination=0.03,
         minimum_training_samples=50,
         training_limit=500,
+        signing_private_key_path="/keys/private.pem",
     )
     repository_type.return_value.load_recent_readings.side_effect = [
         [Mock()] * 50,
@@ -78,3 +91,18 @@ def test_does_not_replace_any_model_when_one_machine_lacks_history(
 
     trainer_type.return_value.train.assert_not_called()
     repository_type.return_value.close.assert_called_once()
+
+
+def test_requires_private_signing_key_before_database_access() -> None:
+    settings = Mock()
+    ml_settings = MlSettings(
+        enabled=False,
+        model_directory="/models",
+        machine_ids=("press-01",),
+        contamination=0.03,
+        minimum_training_samples=50,
+        training_limit=500,
+    )
+
+    with pytest.raises(ValueError, match="ML_SIGNING_PRIVATE_KEY_PATH is required"):
+        run(settings, ml_settings)

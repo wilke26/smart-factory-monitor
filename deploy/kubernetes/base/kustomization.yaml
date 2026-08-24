@@ -6,6 +6,7 @@ resources:
   - consumer-service.yaml
   - simulator-deployment.yaml
   - model-registry-pvc.yaml
+  - network-policies.yaml
 
 configMapGenerator:
   - name: smart-factory-config
@@ -31,5 +32,6 @@ configMapGenerator:
       - ML_ANOMALY_DETECTION_ENABLED=false
       - ML_MODEL_DIRECTORY=/models
       - ML_MACHINE_IDS=press-01
+      - ML_SIGNATURE_PUBLIC_KEY_PATH=/etc/model-signing/public.pem
       - MONITORING_HOST=0.0.0.0
       - MONITORING_PORT=8000

@@ -45,6 +45,7 @@ def ml_settings(*, enabled: bool = False) -> MlSettings:
         contamination=0.05,
         minimum_training_samples=100,
         training_limit=10_000,
+        signature_public_key_path="/keys/public.pem" if enabled else None,
     )
 
 
@@ -147,6 +148,7 @@ def test_loads_ml_model_only_when_enabled(load: Mock) -> None:
     load.assert_called_once_with(
         Path("/models"),
         expected_machine_ids=("press-01",),
+        public_key_path=Path("/keys/public.pem"),
         on_resolution=observability.record_ml_resolution,
     )
     observability.set_ml_models_loaded.assert_called_once_with(2)

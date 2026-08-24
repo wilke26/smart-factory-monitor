@@ -7,6 +7,10 @@ from pathlib import Path
 
 from smart_factory.domain.anomaly import AnomalyFinding
 from smart_factory.domain.telemetry import TelemetryReading
+from smart_factory.infrastructure.ml.artifact_signing import (
+    ArtifactSigningError,
+    ArtifactVerifier,
+)
 from smart_factory.infrastructure.ml.isolation_forest import (
     IsolationForestAnomalyDetector,
     MlArtifactError,
@@ -31,6 +35,7 @@ class MachineModelRegistry:
         directory: Path,
         *,
         expected_machine_ids: tuple[str, ...] | None = None,
+        public_key_path: Path,
         on_resolution: Callable[[bool], None] | None = None,
     ) -> MachineModelRegistry:
         paths = (
@@ -43,10 +48,17 @@ class MachineModelRegistry:
         missing = [path.stem for path in paths if not path.is_file()]
         if missing:
             raise MlArtifactError(f"missing ML artifact for configured machine {missing[0]}")
+        try:
+            verifier = ArtifactVerifier.from_public_key_file(public_key_path)
+        except ArtifactSigningError as error:
+            raise MlArtifactError(
+                f"could not load ML artifact verification key {public_key_path}: {error}"
+            ) from error
         detectors = {
             path.stem: IsolationForestAnomalyDetector.load(
                 path,
                 expected_machine_id=path.stem,
+                verifier=verifier,
             )
             for path in paths
         }

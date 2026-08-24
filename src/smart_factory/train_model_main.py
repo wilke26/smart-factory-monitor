@@ -5,6 +5,7 @@ from pathlib import Path
 
 from smart_factory.config import MlSettings, Settings
 from smart_factory.infrastructure.database.telemetry_repository import PsycopgTelemetryRepository
+from smart_factory.infrastructure.ml.artifact_signing import ArtifactSigner
 from smart_factory.infrastructure.ml.isolation_forest import IsolationForestTrainer
 from smart_factory.logging import configure_logging
 
@@ -12,6 +13,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def run(settings: Settings, ml_settings: MlSettings) -> None:
+    if ml_settings.signing_private_key_path is None:
+        raise ValueError("ML_SIGNING_PRIVATE_KEY_PATH is required for model training")
+    signer = ArtifactSigner.from_private_key_file(Path(ml_settings.signing_private_key_path))
     repository = PsycopgTelemetryRepository(
         settings.database_url,
         min_size=settings.database_pool_min_size,
@@ -40,6 +44,7 @@ def run(settings: Settings, ml_settings: MlSettings) -> None:
         trainer = IsolationForestTrainer(
             contamination=ml_settings.contamination,
             minimum_samples=ml_settings.minimum_training_samples,
+            signer=signer,
         )
         for machine_id, readings in training_sets.items():
             model_path = Path(ml_settings.model_directory) / f"{machine_id}.joblib"

@@ -9,6 +9,7 @@ deployment, operators must provide:
 - a reachable PostgreSQL/TimescaleDB database with migrations already applied;
 - a container registry image built with the `ml` extra if ML will be enabled;
 - CA and client certificates issued by the deployment PKI;
+- an Ed25519 model-signing public key distributed separately from model artifacts;
 - a Kubernetes storage class supporting `ReadWriteMany` for the model registry.
 
 No password, connection string, private key, or certificate is stored in Git.
@@ -47,6 +48,9 @@ kubectl -n smart-factory create secret generic simulator-mqtt-tls \
   --from-file=ca.crt="$MQTT_CA_CERT" \
   --from-file=tls.crt="$SIMULATOR_MQTT_CERT" \
   --from-file=tls.key="$SIMULATOR_MQTT_KEY"
+
+kubectl -n smart-factory create secret generic model-signing-public-key \
+  --from-file=public.pem="$ML_SIGNATURE_PUBLIC_KEY"
 ```
 
 Do not place literal production values in shell history; the commands illustrate the
@@ -60,7 +64,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.8.1 \
+  --image smart-factory-monitor:0.9.0 \
   --build-arg 'PROJECT_INSTALL=.[ml]' .
 
 az aks update \
@@ -81,6 +85,23 @@ instead of `--attach-acr`. The Azure overlay uses `azurefile-csi-premium` becaus
 registry is mounted read-only by the consumer but must remain writable by controlled model
 operations. It requests 100 GiB to match current Premium Azure Files provisioning bounds.
 
+The signing private key is intentionally absent from the application manifests. A
+controlled external training/promotion job must hold it, publish both `.joblib` and
+`.joblib.sig`, and never place the private key in the shared model claim. The consumer
+mounts only the public-key Secret.
+
+## Network-policy boundary
+
+The base applies default-deny ingress and egress to application pods, then permits DNS,
+consumer monitoring ingress on 8000, MQTT/TLS egress on 8883, and PostgreSQL egress on
+5432. The cluster CNI must enforce Kubernetes `NetworkPolicy`.
+
+Standard policy cannot select an external managed service by hostname. The portable base
+therefore permits the broker/database ports to any IPv4 address. Before production use,
+add overlay-specific `ipBlock` CIDRs or a CNI-native FQDN policy for the actual managed
+broker and database endpoints. If custom ports or IPv6 are used, update and re-render the
+policy deliberately.
+
 ## Operational checks
 
 ```bash
@@ -90,6 +111,6 @@ curl --fail http://127.0.0.1:8000/readyz
 curl --fail http://127.0.0.1:8000/metrics
 ```
 
-Production rollout still needs policy-specific network controls, broker ACL creation,
-certificate and secret rotation, schema-migration automation, backups, monitoring/alerts,
-and an approved model-promotion workflow.
+Production rollout still needs endpoint-specific network destinations, managed broker ACL
+creation, certificate/credential/signing-key rotation, schema-migration automation,
+backups, monitoring/alerts, and an approved immutable model-promotion workflow.

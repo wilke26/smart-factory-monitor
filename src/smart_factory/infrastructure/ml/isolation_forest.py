@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Final, cast
@@ -15,6 +16,12 @@ from sklearn.ensemble import IsolationForest
 
 from smart_factory.domain.anomaly import AnomalyFinding, AnomalySeverity
 from smart_factory.domain.telemetry import TelemetryReading
+from smart_factory.infrastructure.ml.artifact_signing import (
+    ArtifactSigner,
+    ArtifactSigningError,
+    ArtifactVerifier,
+    artifact_signature_path,
+)
 
 ARTIFACT_FORMAT_VERSION: Final = 1
 FEATURE_NAMES: Final = (
@@ -58,10 +65,12 @@ class IsolationForestTrainer:
         contamination: float = 0.05,
         minimum_samples: int = 100,
         random_state: int = 42,
+        signer: ArtifactSigner,
     ) -> None:
         self._contamination = contamination
         self._minimum_samples = minimum_samples
         self._random_state = random_state
+        self._signer = signer
 
     def train(self, readings: list[TelemetryReading], output_path: Path) -> IsolationForestArtifact:
         if len(readings) < self._minimum_samples:
@@ -86,8 +95,7 @@ class IsolationForestTrainer:
         self._write_artifact(artifact, output_path)
         return artifact
 
-    @staticmethod
-    def _write_artifact(artifact: IsolationForestArtifact, output_path: Path) -> None:
+    def _write_artifact(self, artifact: IsolationForestArtifact, output_path: Path) -> None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "format_version": ARTIFACT_FORMAT_VERSION,
@@ -99,13 +107,26 @@ class IsolationForestTrainer:
             "training_samples": artifact.training_samples,
             "estimator": artifact.estimator,
         }
+        signature_path = artifact_signature_path(output_path)
         with NamedTemporaryFile(dir=output_path.parent, prefix=".model-", delete=False) as file:
             temporary_path = Path(file.name)
+        with NamedTemporaryFile(
+            dir=output_path.parent,
+            prefix=".signature-",
+            delete=False,
+        ) as signature_file:
+            temporary_signature_path = Path(signature_file.name)
         try:
             joblib.dump(payload, temporary_path)
+            signature = self._signer.sign(temporary_path.read_bytes())
+            temporary_signature_path.write_bytes(signature)
+            os.chmod(temporary_path, 0o644)
+            os.chmod(temporary_signature_path, 0o644)
+            os.replace(temporary_signature_path, signature_path)
             os.replace(temporary_path, output_path)
         finally:
             temporary_path.unlink(missing_ok=True)
+            temporary_signature_path.unlink(missing_ok=True)
 
 
 class IsolationForestAnomalyDetector:
@@ -120,11 +141,16 @@ class IsolationForestAnomalyDetector:
         path: Path,
         *,
         expected_machine_id: str,
+        verifier: ArtifactVerifier,
     ) -> IsolationForestAnomalyDetector:
-        # joblib uses pickle semantics: only load artifacts produced by this project
-        # from a trusted model volume.
         try:
-            loaded = joblib.load(path)
+            serialized = path.read_bytes()
+            signature = artifact_signature_path(path).read_bytes()
+            verifier.verify(serialized, signature)
+        except (OSError, ArtifactSigningError) as error:
+            raise MlArtifactError(f"could not verify ML artifact {path}: {error}") from error
+        try:
+            loaded = joblib.load(BytesIO(serialized))
         except Exception as error:
             raise MlArtifactError(f"could not load ML artifact {path}: {error}") from error
         try:

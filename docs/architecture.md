@@ -1,24 +1,23 @@
-# Architecture v0.8.1
+# Architecture v0.9.0
 
 ## Scope
 
-Version 0.8.1 retains the v0.8 deployment security boundary and makes database readiness
-reflect runtime persistence failures as well as startup availability.
-Both MQTT adapters can authenticate and use server-verified TLS or mutual TLS. Hardened
-Kubernetes manifests run the two application processes as a fixed non-root identity with
-read-only root filesystems, explicit resources, probes, external secrets, and a shared
-model volume. Managed MQTT, PostgreSQL/TimescaleDB, PKI, and secret lifecycle remain
-deployment-owned dependencies.
+Version 0.9 retains accurate runtime readiness and adds integrity and least-privilege
+controls at three existing boundaries. Model artifacts are signed offline and verified
+before deserialization. The bundled broker authenticates distinct clients and applies
+topic ACLs. Kubernetes begins with default-deny workload network policy and opens only the
+documented ports. Managed MQTT, PostgreSQL/TimescaleDB, PKI, key rotation, and secret
+lifecycle remain deployment-owned dependencies.
 
 ```text
 Offline path                         Online path
 telemetry_readings                   MQTT → validation → application service
         │                                                │
         ▼                                                ▼
-model-trainer → trusted registry     CompositeAnomalyDetector
-                     │                ├── rules (always)
-                     └───────────────►└── MachineModelRegistry (opt-in)
-                                          └── Isolation Forest by machine
+model-trainer → sign → registry      CompositeAnomalyDetector
+ private key       artifact + sig     ├── rules (always)
+                         │            └── MachineModelRegistry (opt-in)
+ public key ── verify ───┘                 └── Isolation Forest by machine
                                                        │
                                                        ▼ one transaction
                                       telemetry_readings + anomaly_findings
@@ -29,8 +28,8 @@ model-trainer → trusted registry     CompositeAnomalyDetector
 - `domain` owns validated telemetry, finding contracts, and deterministic rules.
 - `application` owns the technology-neutral `AnomalyDetector` port, detector composition,
   processing orchestration, and persistence ports.
-- `infrastructure.ml` owns scikit-learn training, artifact I/O, registry validation,
-  and machine-aware inference dispatch.
+- `infrastructure.ml` owns scikit-learn training, artifact signing and verification,
+  registry validation, and machine-aware inference dispatch.
 - `infrastructure.database` supplies both atomic persistence and bounded historical reads.
 - `consumer_main` and `train_model_main` are separate composition roots.
 
@@ -39,15 +38,18 @@ scikit-learn nor decides whether ML is enabled.
 
 ## Model lifecycle boundary
 
-Training reads a bounded window for one machine and uses a fixed random seed. It writes
-the artifact atomically, but does not promote or activate it. Operators explicitly
-restart the consumer with ML enabled after training. The consumer fails closed on a
-missing or incompatible enabled model rather than silently changing detection behavior.
+Training reads a bounded window for one machine and uses a fixed random seed. It signs the
+serialized bytes with an offline Ed25519 private key and atomically publishes the detached
+signature and artifact, but does not promote or activate them. Operators explicitly
+restart the consumer with ML enabled after training. The consumer has only the public key
+and fails closed on a missing, unsigned, invalid, or incompatible enabled model.
 
-The registry requires `<machine_id>.joblib` for every configured machine and activates no
-unconfigured file. Each artifact validates format version, exact feature order, filename
-identity, estimator type, and scikit-learn version. Because joblib has pickle semantics,
-the model volume is a trust boundary and must not accept untrusted uploads.
+The registry requires `<machine_id>.joblib` and `<machine_id>.joblib.sig` for every
+configured machine and activates no unconfigured file. It verifies the exact bytes read
+into memory before passing those same bytes to joblib, then validates format version,
+exact feature order, filename identity, estimator type, and scikit-learn version. Because
+joblib has pickle semantics, public-key distribution and private-key custody remain trust
+boundaries even though the model volume itself no longer grants authority to deserialize.
 
 Missing, unreadable, and incompatible artifacts are normalized to `MlArtifactError`.
 That permanent startup/configuration error is deliberately outside the MQTT/database
@@ -85,14 +87,20 @@ as a healthy database interaction.
 ## Operational boundaries
 
 Isolation Forest detects statistical rarity, not equipment failure and not causality.
-Training data quality, hold-out evaluation, drift, model approval, registry/signing,
-alerts, backups, retention/compression, model evaluation, broker ACL provisioning,
-managed-service infrastructure, and automatic deployment remain explicit v0.9+ work.
+Training data quality, hold-out evaluation, drift, model approval, key rotation, alerts,
+backups, retention/compression, managed-service infrastructure, and automatic deployment
+remain explicit future work.
 
 ## Deployment boundary
 
 The base Kubernetes manifests deploy only the consumer, simulator, monitoring service,
-and model-registry claim. They do not embed a broker, database, passwords, certificates,
-or production SQL migration credentials. Runtime values come from a ConfigMap and named
-Secrets; the Azure overlay selects an Azure Files CSI storage class and an ACR image.
-Database schema migration remains an explicit release prerequisite.
+model-registry claim, and network policies. They do not embed a broker, database,
+passwords, certificates, private signing keys, or production SQL migration credentials.
+Runtime values come from a ConfigMap and named Secrets; the consumer mounts only the
+model verification public key. The Azure overlay selects an Azure Files CSI storage class
+and an ACR image. Database schema migration remains an explicit release prerequisite.
+
+Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
+base therefore defaults application pods to deny and permits only DNS, monitoring ingress,
+MQTT/TLS port 8883, and PostgreSQL port 5432. Production overlays must narrow destination
+CIDRs or use a CNI with FQDN-aware policy. Enforcement also depends on the cluster CNI.

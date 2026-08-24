@@ -25,5 +25,6 @@ Keep ML disabled until an operator trains and explicitly enables a compatible ar
 - A model cannot accidentally score telemetry from another machine.
 - Artifact incompatibility stops enabled ML rather than silently degrading.
 - joblib/pickle requires a trusted artifact supply chain.
-- v0.7 adds a local per-machine registry; evaluation, promotion, signing, and drift
-  detection are still required before production use.
+- v0.7 adds a local per-machine registry and v0.9 adds pre-deserialization Ed25519
+  verification. Evaluation, promotion, key rotation, and drift detection remain required
+  before production use.
