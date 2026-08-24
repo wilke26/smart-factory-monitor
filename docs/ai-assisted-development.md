@@ -37,3 +37,8 @@ For v0.8, tests cover credential/TLS configuration invariants and verify that ce
 validation is never disabled. CI renders both Kubernetes bases, while deployment acceptance
 checks non-root/read-only container policy, secret references, probes, Azure Files storage,
 and the existing local Compose path.
+
+For v0.8.1, an external review claim about readiness was traced through the runtime failure
+path. Regression tests verify that failed database operations make the consumer unready,
+successful operations restore readiness, and permanent identity conflicts do not create a
+false infrastructure outage.

@@ -72,6 +72,7 @@ def run(
         settings.database_url,
         min_size=settings.database_pool_min_size,
         max_size=settings.database_pool_max_size,
+        on_availability_change=runtime_observability.set_database_ready,
     )
     service = TelemetryApplicationService(
         repository=repository,
@@ -98,16 +99,13 @@ def run(
         on_message_outcome=runtime_observability.record_mqtt_outcome,
     )
     try:
-        runtime_observability.set_database_ready(False)
         repository.open(timeout=settings.database_connect_timeout_seconds)
-        runtime_observability.set_database_ready(True)
         consumer.connect()
         stop_event.wait()
     finally:
         consumer.close()
         runtime_observability.set_mqtt_connected(False)
         repository.close()
-        runtime_observability.set_database_ready(False)
 
 
 def main() -> None:

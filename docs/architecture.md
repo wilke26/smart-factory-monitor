@@ -1,8 +1,9 @@
-# Architecture v0.8
+# Architecture v0.8.1
 
 ## Scope
 
-Version 0.8 retains the machine-model registry and adds a deployment security boundary.
+Version 0.8.1 retains the v0.8 deployment security boundary and makes database readiness
+reflect runtime persistence failures as well as startup availability.
 Both MQTT adapters can authenticate and use server-verified TLS or mutual TLS. Hardened
 Kubernetes manifests run the two application processes as a fixed non-root identity with
 read-only root filesystems, explicit resources, probes, external secrets, and a shared
@@ -74,6 +75,12 @@ The standard-library monitoring adapter exposes `/healthz`, `/readyz`, and `/met
 Metrics contain bounded aggregate outcomes rather than machine identifiers or payloads.
 The model count and aggregate scored/uncovered counters expose registry coverage without
 creating a machine-ID metric label.
+
+The database adapter reports availability through an optional composition callback. A
+failed open, save, or training read makes the database gauge and readiness false; the next
+successful operation restores them. The application service remains unaware of database
+and monitoring technology, while permanent telemetry identity conflicts continue to count
+as a healthy database interaction.
 
 ## Operational boundaries
 

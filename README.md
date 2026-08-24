@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.8.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.8.1** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -9,7 +9,9 @@ handling, MQTT delivery, local network exposure, schema migrations, dependency a
 health probes, and metrics. v0.7 adds an explicit multi-machine model registry so one
 consumer can safely route each reading to its configured machine-specific model. v0.8
 adds verified MQTT TLS/mTLS, broker credentials, and a hardened Kubernetes/AKS deployment
-baseline without committing secrets or certificates.
+baseline without committing secrets or certificates. v0.8.1 keeps runtime readiness
+accurate when the database becomes unavailable after startup and restores it after the
+next successful database operation.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 

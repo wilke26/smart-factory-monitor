@@ -21,8 +21,11 @@ The consumer exposes three endpoints on port 8000:
   is active, otherwise HTTP 503;
 - `/metrics` returns Prometheus text exposition.
 
-The Compose healthcheck uses `/readyz`. A disconnected broker or unavailable startup
-database therefore makes the consumer unready while its retry/reconnect behavior continues.
+The Compose healthcheck uses `/readyz`. A disconnected broker, unavailable startup
+database, or runtime persistence failure therefore makes the consumer unready. The next
+successful database operation restores database readiness. Permanent telemetry identity
+conflicts do not mark the database unavailable because the database interaction itself
+succeeded.
 
 ## Metrics
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import Any, Protocol, cast
 
@@ -111,19 +112,29 @@ class PsycopgTelemetryRepository:
         min_size: int = 1,
         max_size: int = 4,
         pool: ConnectionPoolLike | None = None,
+        on_availability_change: Callable[[bool], None] | None = None,
     ) -> None:
         self._pool = pool or _create_pool(
             database_url,
             min_size=min_size,
             max_size=max_size,
         )
+        self._on_availability_change = on_availability_change
 
     def open(self, *, timeout: float = 10.0) -> None:
         """Open the pool and fail fast if the database is not ready."""
-        self._pool.open(wait=True, timeout=timeout)
+        try:
+            self._pool.open(wait=True, timeout=timeout)
+        except Exception:
+            self._record_availability(False)
+            raise
+        self._record_availability(True)
 
     def close(self) -> None:
-        self._pool.close()
+        try:
+            self._pool.close()
+        finally:
+            self._record_availability(False)
 
     def save(
         self,
@@ -139,51 +150,64 @@ class PsycopgTelemetryRepository:
             reading.power_kw,
             reading.production_rate,
         )
-        with self._pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(INSERT_TELEMETRY, parameters)
-            inserted = cursor.rowcount == 1
-            if not inserted:
-                cursor.execute(
-                    SELECT_TELEMETRY_BY_IDENTITY,
-                    (reading.machine_id, reading.timestamp),
-                )
-                persisted = cursor.fetchone()
-                expected = (
-                    reading.temperature_c,
-                    reading.vibration_mm_s,
-                    reading.power_kw,
-                    reading.production_rate,
-                )
-                if persisted is None or persisted != expected:
-                    raise TelemetryIdentityConflictError(
-                        "telemetry identity conflict for "
-                        f"{reading.machine_id} at {reading.timestamp.isoformat()}"
+        try:
+            with self._pool.connection() as connection, connection.cursor() as cursor:
+                cursor.execute(INSERT_TELEMETRY, parameters)
+                inserted = cursor.rowcount == 1
+                if not inserted:
+                    cursor.execute(
+                        SELECT_TELEMETRY_BY_IDENTITY,
+                        (reading.machine_id, reading.timestamp),
                     )
-            if findings:
-                cursor.executemany(
-                    INSERT_ANOMALY,
-                    [
-                        (
-                            reading.machine_id,
-                            reading.timestamp,
-                            finding.rule_id,
-                            finding.severity.value,
-                            finding.metric,
-                            finding.observed_value,
-                            finding.threshold,
-                            finding.comparison,
-                            finding.message,
+                    persisted = cursor.fetchone()
+                    expected = (
+                        reading.temperature_c,
+                        reading.vibration_mm_s,
+                        reading.power_kw,
+                        reading.production_rate,
+                    )
+                    if persisted is None or persisted != expected:
+                        raise TelemetryIdentityConflictError(
+                            "telemetry identity conflict for "
+                            f"{reading.machine_id} at {reading.timestamp.isoformat()}"
                         )
-                        for finding in findings
-                    ],
-                )
+                if findings:
+                    cursor.executemany(
+                        INSERT_ANOMALY,
+                        [
+                            (
+                                reading.machine_id,
+                                reading.timestamp,
+                                finding.rule_id,
+                                finding.severity.value,
+                                finding.metric,
+                                finding.observed_value,
+                                finding.threshold,
+                                finding.comparison,
+                                finding.message,
+                            )
+                            for finding in findings
+                        ],
+                    )
+        except TelemetryIdentityConflictError:
+            self._record_availability(True)
+            raise
+        except Exception:
+            self._record_availability(False)
+            raise
+        self._record_availability(True)
         return inserted
 
     def load_recent_readings(self, machine_id: str, limit: int) -> list[TelemetryReading]:
         """Load bounded historical training data without leaking SQL to the trainer."""
-        with self._pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(SELECT_RECENT_TELEMETRY, (machine_id, limit))
-            rows = cursor.fetchall()
+        try:
+            with self._pool.connection() as connection, connection.cursor() as cursor:
+                cursor.execute(SELECT_RECENT_TELEMETRY, (machine_id, limit))
+                rows = cursor.fetchall()
+        except Exception:
+            self._record_availability(False)
+            raise
+        self._record_availability(True)
         return [
             TelemetryReading(
                 machine_id=cast(str, row[0]),
@@ -195,3 +219,7 @@ class PsycopgTelemetryRepository:
             )
             for row in rows
         ]
+
+    def _record_availability(self, available: bool) -> None:
+        if self._on_availability_change is not None:
+            self._on_availability_change(available)

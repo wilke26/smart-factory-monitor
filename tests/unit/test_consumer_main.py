@@ -53,9 +53,16 @@ def ml_settings(*, enabled: bool = False) -> MlSettings:
 def test_run_connects_waits_and_closes(consumer_type: Mock, repository_type: Mock) -> None:
     stop_event = threading.Event()
     stop_event.set()
+    observability = Mock()
 
-    run(settings(), stop_event)
+    run(settings(), stop_event, observability=observability)
 
+    repository_type.assert_called_once_with(
+        "postgresql://database/smart_factory",
+        min_size=1,
+        max_size=4,
+        on_availability_change=observability.set_database_ready,
+    )
     consumer_type.return_value.connect.assert_called_once()
     consumer_type.return_value.close.assert_called_once()
     repository_type.return_value.open.assert_called_once_with(timeout=10)

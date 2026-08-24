@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import DEFAULT, MagicMock, Mock, call
 
 import pytest
 
@@ -38,23 +38,44 @@ def finding() -> AnomalyFinding:
     )
 
 
-def repository_with_pool(*, rowcount: int = 1) -> tuple[PsycopgTelemetryRepository, MagicMock]:
+def repository_with_pool(
+    *,
+    rowcount: int = 1,
+    on_availability_change: Mock | None = None,
+) -> tuple[PsycopgTelemetryRepository, MagicMock]:
     pool = MagicMock()
     connection = pool.connection.return_value.__enter__.return_value
     cursor = connection.cursor.return_value.__enter__.return_value
     cursor.rowcount = rowcount
-    repository = PsycopgTelemetryRepository("unused", pool=pool)
+    repository = PsycopgTelemetryRepository(
+        "unused",
+        pool=pool,
+        on_availability_change=on_availability_change,
+    )
     return repository, pool
 
 
 def test_opens_and_closes_pool() -> None:
-    repository, pool = repository_with_pool()
+    availability = Mock()
+    repository, pool = repository_with_pool(on_availability_change=availability)
 
     repository.open(timeout=7.5)
     repository.close()
 
     pool.open.assert_called_once_with(wait=True, timeout=7.5)
     pool.close.assert_called_once()
+    assert availability.call_args_list == [call(True), call(False)]
+
+
+def test_reports_unavailable_after_open_failure() -> None:
+    availability = Mock()
+    repository, pool = repository_with_pool(on_availability_change=availability)
+    pool.open.side_effect = RuntimeError("database unavailable")
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        repository.open()
+
+    availability.assert_called_once_with(False)
 
 
 def test_saves_all_contract_fields_in_one_parameterized_statement() -> None:
@@ -127,7 +148,11 @@ def test_duplicate_is_idempotent() -> None:
 
 
 def test_rejects_same_identity_with_different_measurement() -> None:
-    repository, pool = repository_with_pool(rowcount=0)
+    availability = Mock()
+    repository, pool = repository_with_pool(
+        rowcount=0,
+        on_availability_change=availability,
+    )
     connection = pool.connection.return_value.__enter__.return_value
     cursor = connection.cursor.return_value.__enter__.return_value
     cursor.fetchone.return_value = (95.0, 2.7, 17.3, 44)
@@ -136,6 +161,19 @@ def test_rejects_same_identity_with_different_measurement() -> None:
         repository.save(reading(), (finding(),))
 
     cursor.executemany.assert_not_called()
+    availability.assert_called_once_with(True)
+
+
+def test_runtime_database_failure_changes_readiness_until_next_success() -> None:
+    availability = Mock()
+    repository, pool = repository_with_pool(on_availability_change=availability)
+    pool.connection.side_effect = [RuntimeError("database unavailable"), DEFAULT]
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        repository.save(reading(), ())
+
+    assert repository.save(reading(), ()) is True
+    assert availability.call_args_list == [call(False), call(True)]
 
 
 def test_loads_recent_readings_for_training() -> None:
