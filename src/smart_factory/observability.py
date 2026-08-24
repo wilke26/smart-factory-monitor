@@ -31,6 +31,9 @@ class RuntimeObservability:
         self._inserted_total = 0
         self._anomaly_findings_total = 0
         self._processing_duration_seconds = 0.0
+        self._ml_models_loaded = 0
+        self._ml_scored_total = 0
+        self._ml_uncovered_total = 0
 
     def set_mqtt_connected(self, connected: bool) -> None:
         with self._lock:
@@ -59,6 +62,19 @@ class RuntimeObservability:
             self._anomaly_findings_total += anomaly_count
             self._processing_duration_seconds += duration_seconds
 
+    def set_ml_models_loaded(self, count: int) -> None:
+        if count < 0:
+            raise ValueError("loaded model count must not be negative")
+        with self._lock:
+            self._ml_models_loaded = count
+
+    def record_ml_resolution(self, covered: bool) -> None:
+        with self._lock:
+            if covered:
+                self._ml_scored_total += 1
+            else:
+                self._ml_uncovered_total += 1
+
     def is_ready(self) -> bool:
         with self._lock:
             return self._mqtt_connected and self._database_ready
@@ -82,6 +98,9 @@ class RuntimeObservability:
             inserted_total = self._inserted_total
             anomaly_findings_total = self._anomaly_findings_total
             duration = self._processing_duration_seconds
+            ml_models_loaded = self._ml_models_loaded
+            ml_scored_total = self._ml_scored_total
+            ml_uncovered_total = self._ml_uncovered_total
         lines = [
             "# HELP smart_factory_mqtt_connected Whether the MQTT subscription is active.",
             "# TYPE smart_factory_mqtt_connected gauge",
@@ -108,6 +127,13 @@ class RuntimeObservability:
             "# TYPE smart_factory_processing_duration_seconds summary",
             f"smart_factory_processing_duration_seconds_sum {duration:.9f}",
             f"smart_factory_processing_duration_seconds_count {processed_total}",
+            "# HELP smart_factory_ml_models_loaded Loaded machine-specific ML artifacts.",
+            "# TYPE smart_factory_ml_models_loaded gauge",
+            f"smart_factory_ml_models_loaded {ml_models_loaded}",
+            "# HELP smart_factory_ml_inference_total Readings by model-registry coverage.",
+            "# TYPE smart_factory_ml_inference_total counter",
+            f'smart_factory_ml_inference_total{{coverage="scored"}} {ml_scored_total}',
+            f'smart_factory_ml_inference_total{{coverage="uncovered"}} {ml_uncovered_total}',
         ]
         return ("\n".join(lines) + "\n").encode("utf-8")
 

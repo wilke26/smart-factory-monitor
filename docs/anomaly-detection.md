@@ -44,3 +44,11 @@ finding.
 An ML finding stores the score as `observed_value`, zero as `threshold`, `<` as the
 comparison, and the model ID in its message. This is locally explainable evidence, not a
 claim that Isolation Forest explains which input feature caused the score.
+
+## Multi-machine registry
+
+v0.7 stores one artifact as `<machine_id>.joblib`. `ML_MACHINE_IDS` defines the complete
+active set: startup fails if one configured artifact is absent or its embedded identity
+does not match the filename. The registry dispatches a reading only to its own detector;
+unconfigured machines continue through deterministic rules and are counted as uncovered
+ML inference without exposing machine IDs as metric labels.

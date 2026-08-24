@@ -40,8 +40,8 @@ def settings() -> Settings:
 def ml_settings(*, enabled: bool = False) -> MlSettings:
     return MlSettings(
         enabled=enabled,
-        model_path="/models/model.joblib",
-        machine_id="press-01",
+        model_directory="/models",
+        machine_ids=("press-01",),
         contamination=0.05,
         minimum_training_samples=100,
         training_limit=10_000,
@@ -129,13 +129,17 @@ def test_rule_detector_remains_available_when_ml_is_disabled() -> None:
     )
 
 
-@patch("smart_factory.infrastructure.ml.isolation_forest.IsolationForestAnomalyDetector.load")
+@patch("smart_factory.infrastructure.ml.registry.MachineModelRegistry.load")
 def test_loads_ml_model_only_when_enabled(load: Mock) -> None:
+    load.return_value.machine_ids = ("press-01", "press-02")
     load.return_value.evaluate.return_value = ()
+    observability = Mock()
 
-    build_anomaly_detector(settings(), ml_settings(enabled=True))
+    build_anomaly_detector(settings(), ml_settings(enabled=True), observability)
 
     load.assert_called_once_with(
-        Path("/models/model.joblib"),
-        expected_machine_id="press-01",
+        Path("/models"),
+        expected_machine_ids=("press-01",),
+        on_resolution=observability.record_ml_resolution,
     )
+    observability.set_ml_models_loaded.assert_called_once_with(2)

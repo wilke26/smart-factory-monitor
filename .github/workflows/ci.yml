@@ -55,20 +55,21 @@ jobs:
           docker compose run --rm schema-migrate
           docker compose exec -T timescaledb psql \
             -U smart_factory -d smart_factory -v ON_ERROR_STOP=1 \
-            -c "INSERT INTO telemetry_readings (machine_id, recorded_at, temperature_c, vibration_mm_s, power_kw, production_rate) SELECT 'press-01', NOW() - number * INTERVAL '1 second', 68 + (number % 5) * 0.1, 2.5 + (number % 7) * 0.02, 17 + (number % 3) * 0.1, 44 + (number % 2) FROM generate_series(1, 120) AS number;"
-          docker compose --profile tools run --rm model-trainer
+            -c "INSERT INTO telemetry_readings (machine_id, recorded_at, temperature_c, vibration_mm_s, power_kw, production_rate) SELECT machine_id, NOW() - number * INTERVAL '1 second', 68 + (number % 5) * 0.1, 2.5 + (number % 7) * 0.02, 17 + (number % 3) * 0.1, 44 + (number % 2) FROM (VALUES ('press-01'), ('press-02')) AS machines(machine_id) CROSS JOIN generate_series(1, 120) AS number;"
+          ML_MACHINE_IDS=press-01,press-02 docker compose --profile tools run --rm model-trainer
           docker compose run --rm --no-deps consumer python -c \
-            "from pathlib import Path; from smart_factory.infrastructure.ml.isolation_forest import IsolationForestAnomalyDetector; IsolationForestAnomalyDetector.load(Path('/models/isolation-forest.joblib'), expected_machine_id='press-01')"
-          ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --wait mosquitto consumer simulator
+            "from pathlib import Path; from smart_factory.infrastructure.ml.registry import MachineModelRegistry; MachineModelRegistry.load(Path('/models'))"
+          ML_ANOMALY_DETECTION_ENABLED=true ML_MACHINE_IDS=press-01,press-02 docker compose up -d --wait mosquitto consumer simulator
           curl --fail --silent http://127.0.0.1:8000/readyz
+          curl --fail --silent http://127.0.0.1:8000/metrics | grep -q 'smart_factory_ml_models_loaded 2'
           for attempt in $(seq 1 20); do
             reading_count=$(docker compose exec -T timescaledb psql \
               -U smart_factory -d smart_factory -At \
               -c "SELECT COUNT(*) FROM telemetry_readings")
-            if [ "$reading_count" -gt 120 ]; then break; fi
+            if [ "$reading_count" -gt 240 ]; then break; fi
             sleep 1
           done
-          test "$reading_count" -gt 120
+          test "$reading_count" -gt 240
       - name: Stop Compose services
         if: always()
         run: docker compose down -v

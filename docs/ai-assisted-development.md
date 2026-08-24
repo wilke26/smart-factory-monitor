@@ -28,3 +28,7 @@ documentation before adoption. Tests cover conflicting natural identities, publi
 timeouts, configured model identity, persistent bounded MQTT connect properties,
 monitoring state and output, and the complete Compose ingestion smoke path. CI also runs a
 dependency audit. Generated review reports remain ignored build-time material.
+
+For v0.7, tests additionally cover multi-machine configuration, exact registry activation,
+missing-model fail-fast behavior, machine-aware dispatch, batch training targets, and
+bounded ML coverage metrics.

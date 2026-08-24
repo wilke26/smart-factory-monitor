@@ -29,6 +29,7 @@ The consumer exports:
 - processed and newly inserted telemetry counters;
 - detected anomaly count;
 - processing-duration sum and count.
+- loaded machine-model count and aggregate scored/uncovered inference counters.
 
 Metrics are process-local and reset on restart. They deliberately contain no machine IDs,
 topics, payloads, or exception messages, keeping cardinality bounded and avoiding sensitive

@@ -1,21 +1,22 @@
-# Architecture v0.6
+# Architecture v0.7
 
 ## Scope
 
-Version 0.6 retains the offline-trained multivariate anomaly inference from v0.5 and adds
-operational hardening: bounded persistent MQTT sessions, identity-conflict detection,
-health/readiness probes, aggregate metrics, tracked schema migrations, dependency audits,
-and loopback-only host port publication. It deliberately excludes online learning, a
-business HTTP API, automatic model promotion, and production model operations.
+Version 0.7 retains the v0.6 operational hardening and closes the mismatch between a
+multi-machine MQTT subscription and the former single-machine ML composition. A trusted
+registry now loads an explicit model set and dispatches inference by machine identity.
+It deliberately excludes online learning, a business HTTP API, automatic model promotion,
+and production model operations.
 
 ```text
 Offline path                         Online path
 telemetry_readings                   MQTT → validation → application service
         │                                                │
         ▼                                                ▼
-model-trainer → trusted artifact     CompositeAnomalyDetector
+model-trainer → trusted registry     CompositeAnomalyDetector
                      │                ├── rules (always)
-                     └───────────────►└── Isolation Forest (opt-in)
+                     └───────────────►└── MachineModelRegistry (opt-in)
+                                          └── Isolation Forest by machine
                                                        │
                                                        ▼ one transaction
                                       telemetry_readings + anomaly_findings
@@ -26,7 +27,8 @@ model-trainer → trusted artifact     CompositeAnomalyDetector
 - `domain` owns validated telemetry, finding contracts, and deterministic rules.
 - `application` owns the technology-neutral `AnomalyDetector` port, detector composition,
   processing orchestration, and persistence ports.
-- `infrastructure.ml` owns scikit-learn training, artifact I/O, and inference.
+- `infrastructure.ml` owns scikit-learn training, artifact I/O, registry validation,
+  and machine-aware inference dispatch.
 - `infrastructure.database` supplies both atomic persistence and bounded historical reads.
 - `consumer_main` and `train_model_main` are separate composition roots.
 
@@ -40,9 +42,10 @@ the artifact atomically, but does not promote or activate it. Operators explicit
 restart the consumer with ML enabled after training. The consumer fails closed on a
 missing or incompatible enabled model rather than silently changing detection behavior.
 
-The artifact validates format version, exact feature order, configured target machine,
-estimator type, and scikit-learn version. Because joblib has pickle semantics, the model
-volume is a trust boundary and must not accept untrusted uploads.
+The registry requires `<machine_id>.joblib` for every configured machine and activates no
+unconfigured file. Each artifact validates format version, exact feature order, filename
+identity, estimator type, and scikit-learn version. Because joblib has pickle semantics,
+the model volume is a trust boundary and must not accept untrusted uploads.
 
 Missing, unreadable, and incompatible artifacts are normalized to `MlArtifactError`.
 That permanent startup/configuration error is deliberately outside the MQTT/database
@@ -68,10 +71,12 @@ the application service, MQTT adapter, and monitoring server. The application se
 depends only on `TelemetryProcessingObserver`; it has no HTTP or Prometheus dependency.
 The standard-library monitoring adapter exposes `/healthz`, `/readyz`, and `/metrics`.
 Metrics contain bounded aggregate outcomes rather than machine identifiers or payloads.
+The model count and aggregate scored/uncovered counters expose registry coverage without
+creating a machine-ID metric label.
 
 ## Operational boundaries
 
 Isolation Forest detects statistical rarity, not equipment failure and not causality.
 Training data quality, hold-out evaluation, drift, model approval, registry/signing,
 alerts, production secrets, TLS/client identities, backups, retention/compression,
-model evaluation, and deployment automation remain explicit v0.7+ work.
+model evaluation, and deployment automation remain explicit v0.8+ work.

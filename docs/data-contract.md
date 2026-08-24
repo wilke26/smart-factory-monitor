@@ -48,3 +48,5 @@ Anomaly findings reference that same key; their evidence contract is documented 
 The ML feature contract uses the four numeric fields in the table order shown above and
 does not include identifiers or timestamps. A model artifact is bound separately to one
 `machine_id`; changing feature meaning or order requires a new artifact format.
+In the v0.7 registry the trusted artifact filename is `<machine_id>.joblib` and must match
+the embedded artifact identity.

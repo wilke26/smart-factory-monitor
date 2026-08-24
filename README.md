@@ -1,12 +1,13 @@
 # Smart Factory Monitor
 
-Version **0.6.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.7.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
 atomically persists readings plus findings in TimescaleDB. v0.6 hardens identity-conflict
 handling, MQTT delivery, local network exposure, schema migrations, dependency auditing,
-health probes, and metrics.
+health probes, and metrics. v0.7 adds an explicit multi-machine model registry so one
+consumer can safely route each reading to its configured machine-specific model.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
@@ -76,7 +77,8 @@ MqttPublisher ── factory/<area>/<machine>/telemetry ──► Mosquitto
                                                             │
                                             CompositeAnomalyDetector
                                              ├── deterministic rules
-                                             └── optional Isolation Forest
+                                             └── optional model registry
+                                                  └── Isolation Forest by machine
                                                             │ TelemetryRepository
                                                             ▼
                                              PsycopgTelemetryRepository
@@ -130,16 +132,19 @@ The Isolation Forest complements rules by detecting unusual combinations across 
 four numeric telemetry features. Training is an explicit offline operation over recent
 readings from one machine; the live consumer never retrains a model.
 
-After at least 100 readings for `press-01` have been collected:
+After at least 100 readings for every configured training machine have been collected:
 
 ```bash
 docker compose --profile tools run --rm model-trainer
 ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
 ```
 
-The trainer writes a versioned artifact to the shared `ml-models` volume using an atomic
-replace. With ML enabled, the consumer validates the artifact format, feature order,
-machine identity, estimator type, and exact scikit-learn runtime version before serving.
+The comma-separated `ML_MACHINE_IDS` setting controls both the training batch and the
+active registry. The trainer writes `<machine_id>.joblib` for each configured machine to
+the shared `ml-models` volume using an atomic replace. With ML enabled, the consumer
+requires every configured file and validates its filename-to-machine mapping, artifact
+format, feature order, machine identity, estimator type, and exact scikit-learn runtime
+version before serving. Extra stale files are not activated.
 An enabled consumer fails fast with a dedicated artifact error if the model is missing,
 unreadable, or invalid; permanent model configuration failures never enter the
 infrastructure retry loop.
@@ -194,8 +199,8 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `ANOMALY_MAX_POWER_KW` | `30.0` | High-power threshold |
 | `ANOMALY_MIN_PRODUCTION_RATE` | `25` | Low-production threshold |
 | `ML_ANOMALY_DETECTION_ENABLED` | `false` | Enable model loading and inference |
-| `ML_MODEL_PATH` | `/models/isolation-forest.joblib` | Trusted model artifact path |
-| `ML_MACHINE_ID` | `press-01` | Machine used for training and inference |
+| `ML_MODEL_DIRECTORY` | `/models` | Trusted machine-model registry directory |
+| `ML_MACHINE_IDS` | `press-01` | Comma-separated machines trained and activated |
 | `ML_CONTAMINATION` | `0.05` | Expected anomaly fraction during training |
 | `ML_MINIMUM_TRAINING_SAMPLES` | `100` | Minimum history required to train |
 | `ML_TRAINING_LIMIT` | `10000` | Maximum recent readings loaded for training |
@@ -220,7 +225,8 @@ curl --fail http://127.0.0.1:8000/metrics
 - `/healthz` reports that the process and monitoring thread are alive.
 - `/readyz` succeeds only while the database pool is ready and MQTT is subscribed.
 - `/metrics` exports connection gauges, message outcomes, processing duration, inserts,
-  and anomaly counts in Prometheus text format.
+  anomaly counts, loaded-model count, and covered/uncovered ML inference counts in
+  Prometheus text format.
 
 ## Local development
 
@@ -264,10 +270,12 @@ MQTT_HOST=localhost smart-factory-simulator
 - [ADR 0005: deterministic rules](docs/adr/0005-rule-based-anomaly-detection.md)
 - [ADR 0006: offline Isolation Forest](docs/adr/0006-offline-isolation-forest.md)
 - [ADR 0007: v0.6 operational hardening](docs/adr/0007-operational-hardening.md)
+- [ADR 0008: explicit machine-model registry](docs/adr/0008-explicit-machine-model-registry.md)
 - [Operations and observability](docs/operations.md)
+- [Multi-machine model operations](docs/model-operations.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-v0.7 can add TLS identities and ACLs for a shared deployment, alert routing, model
-evaluation and drift monitoring, retention/compression policies, and a per-machine model
-registry. Local Compose remains a development environment rather than a production
-deployment.
+v0.8 can add TLS identities and ACLs for a shared deployment, alert routing, offline model
+evaluation and drift thresholds, retention/compression policies, and Kubernetes/Azure
+deployment assets. Local Compose remains a development environment rather than a
+production deployment.

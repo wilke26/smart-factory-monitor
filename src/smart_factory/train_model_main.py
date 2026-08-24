@@ -19,24 +19,42 @@ def run(settings: Settings, ml_settings: MlSettings) -> None:
     )
     try:
         repository.open(timeout=settings.database_connect_timeout_seconds)
-        readings = repository.load_recent_readings(
-            ml_settings.machine_id, ml_settings.training_limit
-        )
-        artifact = IsolationForestTrainer(
+        training_sets = {
+            machine_id: repository.load_recent_readings(
+                machine_id,
+                ml_settings.training_limit,
+            )
+            for machine_id in ml_settings.machine_ids
+        }
+        insufficient = [
+            machine_id
+            for machine_id, readings in training_sets.items()
+            if len(readings) < ml_settings.minimum_training_samples
+        ]
+        if insufficient:
+            machine_id = insufficient[0]
+            raise ValueError(
+                f"at least {ml_settings.minimum_training_samples} readings are required "
+                f"for {machine_id}; got {len(training_sets[machine_id])}"
+            )
+        trainer = IsolationForestTrainer(
             contamination=ml_settings.contamination,
             minimum_samples=ml_settings.minimum_training_samples,
-        ).train(readings, Path(ml_settings.model_path))
+        )
+        for machine_id, readings in training_sets.items():
+            model_path = Path(ml_settings.model_directory) / f"{machine_id}.joblib"
+            artifact = trainer.train(readings, model_path)
+            LOGGER.info(
+                "ml_model_trained",
+                extra={
+                    "model_id": artifact.model_id,
+                    "machine_id": artifact.machine_id,
+                    "training_samples": artifact.training_samples,
+                    "model_path": str(model_path),
+                },
+            )
     finally:
         repository.close()
-    LOGGER.info(
-        "ml_model_trained",
-        extra={
-            "model_id": artifact.model_id,
-            "machine_id": artifact.machine_id,
-            "training_samples": artifact.training_samples,
-            "model_path": ml_settings.model_path,
-        },
-    )
 
 
 def main() -> None:

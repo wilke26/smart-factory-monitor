@@ -1,8 +1,11 @@
 """Environment-based runtime configuration."""
 
 import os
+import re
 from dataclasses import dataclass
 from math import isfinite
+
+_MACHINE_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def _required_range(name: str, default: str, minimum: int, maximum: int) -> int:
@@ -43,8 +46,8 @@ class MlSettings:
     """Configuration shared by offline training and optional online inference."""
 
     enabled: bool
-    model_path: str
-    machine_id: str
+    model_directory: str
+    machine_ids: tuple[str, ...]
     contamination: float
     minimum_training_samples: int
     training_limit: int
@@ -55,13 +58,31 @@ class MlSettings:
         training_limit = _required_range("ML_TRAINING_LIMIT", "10000", 20, 1_000_000)
         if training_limit < minimum_samples:
             raise ValueError("ML_TRAINING_LIMIT must not be below ML_MINIMUM_TRAINING_SAMPLES")
-        model_path = os.getenv("ML_MODEL_PATH", "/models/isolation-forest.joblib").strip()
-        if not model_path:
-            raise ValueError("ML_MODEL_PATH must not be empty")
+        model_directory = os.getenv("ML_MODEL_DIRECTORY", "/models").strip()
+        if not model_directory:
+            raise ValueError("ML_MODEL_DIRECTORY must not be empty")
+        configured_machine_ids = os.getenv(
+            "ML_MACHINE_IDS",
+            os.getenv("ML_MACHINE_ID", os.getenv("MACHINE_ID", "press-01")),
+        )
+        machine_ids = tuple(
+            dict.fromkeys(
+                part.strip() for part in configured_machine_ids.split(",") if part.strip()
+            )
+        )
+        if not machine_ids:
+            raise ValueError("ML_MACHINE_IDS must contain at least one machine ID")
+        invalid_machine_ids = [
+            machine_id
+            for machine_id in machine_ids
+            if not _MACHINE_ID_PATTERN.fullmatch(machine_id)
+        ]
+        if invalid_machine_ids:
+            raise ValueError(f"invalid machine ID in ML_MACHINE_IDS: {invalid_machine_ids[0]}")
         return cls(
             enabled=_required_boolean("ML_ANOMALY_DETECTION_ENABLED", "false"),
-            model_path=model_path,
-            machine_id=os.getenv("ML_MACHINE_ID", os.getenv("MACHINE_ID", "press-01")),
+            model_directory=model_directory,
+            machine_ids=machine_ids,
             contamination=_required_float_range("ML_CONTAMINATION", "0.05", 0.001, 0.5),
             minimum_training_samples=minimum_samples,
             training_limit=training_limit,

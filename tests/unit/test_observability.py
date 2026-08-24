@@ -30,6 +30,9 @@ def test_metrics_are_bounded_aggregates() -> None:
         anomaly_count=2,
         duration_seconds=0.125,
     )
+    observability.set_ml_models_loaded(2)
+    observability.record_ml_resolution(True)
+    observability.record_ml_resolution(False)
 
     metrics = observability.render_prometheus().decode("utf-8")
 
@@ -38,6 +41,9 @@ def test_metrics_are_bounded_aggregates() -> None:
     assert "smart_factory_telemetry_inserted_total 1" in metrics
     assert "smart_factory_anomaly_findings_total 2" in metrics
     assert "smart_factory_processing_duration_seconds_sum 0.125000000" in metrics
+    assert "smart_factory_ml_models_loaded 2" in metrics
+    assert 'smart_factory_ml_inference_total{coverage="scored"} 1' in metrics
+    assert 'smart_factory_ml_inference_total{coverage="uncovered"} 1' in metrics
 
 
 def test_monitoring_endpoints_reflect_readiness() -> None:

@@ -25,6 +25,7 @@ LOGGER = logging.getLogger(__name__)
 def build_anomaly_detector(
     settings: Settings,
     ml_settings: MlSettings,
+    observability: RuntimeObservability | None = None,
 ) -> CompositeAnomalyDetector:
     detectors: list[AnomalyDetector] = [
         RuleBasedAnomalyDetector(
@@ -39,16 +40,18 @@ def build_anomaly_detector(
     if ml_settings.enabled:
         from pathlib import Path
 
-        from smart_factory.infrastructure.ml.isolation_forest import (
-            IsolationForestAnomalyDetector,
-        )
+        from smart_factory.infrastructure.ml.registry import MachineModelRegistry
 
-        detectors.append(
-            IsolationForestAnomalyDetector.load(
-                Path(ml_settings.model_path),
-                expected_machine_id=ml_settings.machine_id,
-            )
+        registry = MachineModelRegistry.load(
+            Path(ml_settings.model_directory),
+            expected_machine_ids=ml_settings.machine_ids,
+            on_resolution=(observability.record_ml_resolution if observability else None),
         )
+        if observability is not None:
+            observability.set_ml_models_loaded(len(registry.machine_ids))
+        detectors.append(registry)
+    elif observability is not None:
+        observability.set_ml_models_loaded(0)
     return CompositeAnomalyDetector(tuple(detectors))
 
 
@@ -59,13 +62,17 @@ def run(
     observability: RuntimeObservability | None = None,
 ) -> None:
     """Consume telemetry until a termination signal is received."""
-    detector = build_anomaly_detector(settings, ml_settings or MlSettings.from_env())
+    runtime_observability = observability or RuntimeObservability()
+    detector = build_anomaly_detector(
+        settings,
+        ml_settings or MlSettings.from_env(),
+        runtime_observability,
+    )
     repository = PsycopgTelemetryRepository(
         settings.database_url,
         min_size=settings.database_pool_min_size,
         max_size=settings.database_pool_max_size,
     )
-    runtime_observability = observability or RuntimeObservability()
     service = TelemetryApplicationService(
         repository=repository,
         anomaly_detector=detector,

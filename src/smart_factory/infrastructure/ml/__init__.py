@@ -5,5 +5,11 @@ from smart_factory.infrastructure.ml.isolation_forest import (
     IsolationForestTrainer,
     MlArtifactError,
 )
+from smart_factory.infrastructure.ml.registry import MachineModelRegistry
 
-__all__ = ["IsolationForestAnomalyDetector", "IsolationForestTrainer", "MlArtifactError"]
+__all__ = [
+    "IsolationForestAnomalyDetector",
+    "IsolationForestTrainer",
+    "MachineModelRegistry",
+    "MlArtifactError",
+]

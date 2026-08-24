@@ -134,7 +134,8 @@ def test_rejects_thresholds_outside_contract_bounds(
 def test_ml_defaults_to_explicitly_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "ML_ANOMALY_DETECTION_ENABLED",
-        "ML_MODEL_PATH",
+        "ML_MODEL_DIRECTORY",
+        "ML_MACHINE_IDS",
         "ML_MACHINE_ID",
         "ML_CONTAMINATION",
         "ML_MINIMUM_TRAINING_SAMPLES",
@@ -146,7 +147,8 @@ def test_ml_defaults_to_explicitly_disabled(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert settings.enabled is False
     assert settings.contamination == 0.05
-    assert settings.machine_id == "press-01"
+    assert settings.model_directory == "/models"
+    assert settings.machine_ids == ("press-01",)
     assert settings.minimum_training_samples == 100
     assert settings.training_limit == 10_000
 
@@ -164,4 +166,20 @@ def test_rejects_training_limit_below_minimum(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("ML_TRAINING_LIMIT", "100")
 
     with pytest.raises(ValueError, match="must not be below"):
+        MlSettings.from_env()
+
+
+def test_parses_unique_machine_registry_targets(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ML_MACHINE_IDS", "press-01, press-02,press-01")
+
+    assert MlSettings.from_env().machine_ids == ("press-01", "press-02")
+
+
+@pytest.mark.parametrize("value", ["", "Press 01", "press-01,invalid_machine"])
+def test_rejects_invalid_machine_registry_targets(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("ML_MACHINE_IDS", value)
+
+    with pytest.raises(ValueError, match=r"ML_MACHINE_IDS|invalid machine ID"):
         MlSettings.from_env()
