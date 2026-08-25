@@ -32,3 +32,11 @@ bearer credentials outside the consumer.
 - Retries survive restarts and expose attempt state in TimescaleDB.
 - Plain HTTP requires an explicit development-only opt-in.
 - Dead-letter handling, escalation policy, and durable alert metrics remain future work.
+
+## Implementation note (v0.11.1)
+
+A worker can lose its lease after expiry if another dispatcher claims the row before the
+original worker records delivery or retry state. This is an expected concurrency outcome:
+the stale worker logs the event ID and attempted state transition, skips the stale update,
+and continues processing the remaining batch. The current lease owner remains responsible
+for the row.

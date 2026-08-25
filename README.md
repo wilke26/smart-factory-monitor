@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.11.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.11.1** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -19,7 +19,9 @@ vulnerabilities. v0.10 adds a signed-artifact-bound reference distribution and a
 explicit offline evaluation command that gates post-training data on sample count,
 anomaly rate, and per-feature Population Stability Index (PSI). v0.11 adds durable,
 severity-filtered webhook alert routing through a transactional outbox and a separately
-deployable, lease-based dispatcher.
+deployable, lease-based dispatcher. v0.11.1 treats a concurrently replaced or expired
+dispatcher lease as an expected delivery outcome, logs it without sensitive error text,
+and continues processing the remaining batch.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
@@ -177,6 +179,8 @@ sends the immutable anomaly evidence as JSON, and marks a row delivered only aft
 response. Failures are rescheduled with capped exponential backoff. Delivery is
 at-least-once: a crash after the webhook accepts an event but before the database update
 can resend it, so every request carries the stable `event_id` as `Idempotency-Key`.
+If another dispatcher has already replaced an expired lease, the stale worker skips that
+state transition and continues its remaining batch instead of terminating the process.
 
 HTTPS certificate and hostname verification use the platform trust store or an optional
 CA file. Redirects are rejected so credentials cannot cross to another endpoint. Plain

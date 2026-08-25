@@ -2,7 +2,12 @@
 
 import logging
 
-from smart_factory.application.ports.alerts import AlertOutbox, AlertSink
+from smart_factory.application.ports.alerts import (
+    AlertLeaseLostError,
+    AlertOutbox,
+    AlertSink,
+    ClaimedAlert,
+)
 
 
 class AlertDispatcher:
@@ -43,11 +48,15 @@ class AlertDispatcher:
                     self._retry_max_seconds,
                 )
                 error_name = type(error).__name__
-                self._outbox.reschedule(
-                    claimed,
-                    delay_seconds=delay,
-                    error=error_name,
-                )
+                try:
+                    self._outbox.reschedule(
+                        claimed,
+                        delay_seconds=delay,
+                        error=error_name,
+                    )
+                except AlertLeaseLostError:
+                    self._log_lease_lost(claimed, operation="reschedule")
+                    continue
                 self._logger.warning(
                     "anomaly_alert_failed",
                     extra={
@@ -58,7 +67,11 @@ class AlertDispatcher:
                     },
                 )
                 continue
-            self._outbox.mark_delivered(claimed)
+            try:
+                self._outbox.mark_delivered(claimed)
+            except AlertLeaseLostError:
+                self._log_lease_lost(claimed, operation="mark_delivered")
+                continue
             delivered += 1
             self._logger.info(
                 "anomaly_alert_delivered",
@@ -68,3 +81,14 @@ class AlertDispatcher:
                 },
             )
         return delivered
+
+    def _log_lease_lost(self, claimed: ClaimedAlert, *, operation: str) -> None:
+        alert = claimed.alert
+        self._logger.warning(
+            "anomaly_alert_lease_lost",
+            extra={
+                "event_id": str(alert.event_id),
+                "attempt_number": claimed.attempt_number,
+                "operation": operation,
+            },
+        )

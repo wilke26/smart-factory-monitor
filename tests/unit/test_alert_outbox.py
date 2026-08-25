@@ -94,6 +94,33 @@ def test_marks_only_the_owned_lease_as_delivered() -> None:
     )
 
 
+def test_rejects_marking_delivery_after_lease_is_lost() -> None:
+    outbox, _, cursor = outbox_with_pool()
+    row = (
+        EVENT_ID,
+        "press-01",
+        RECORDED_AT,
+        "temperature-high",
+        "high",
+        "temperature_c",
+        95.0,
+        90.0,
+        ">",
+        "temperature exceeds maximum",
+        1,
+    )
+    claimed = PsycopgAlertOutbox._claimed_alert(row, LEASE_TOKEN)
+    cursor.rowcount = 0
+
+    with pytest.raises(AlertLeaseLostError, match=str(EVENT_ID)):
+        outbox.mark_delivered(claimed)
+
+    cursor.execute.assert_called_once_with(
+        MARK_ALERT_DELIVERED,
+        ("press-01", RECORDED_AT, "temperature-high", LEASE_TOKEN),
+    )
+
+
 def test_reschedule_records_bounded_error_and_rejects_lost_lease() -> None:
     outbox, _, cursor = outbox_with_pool()
     row = (

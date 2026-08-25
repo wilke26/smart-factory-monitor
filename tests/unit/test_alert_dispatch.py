@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 from uuid import UUID, uuid4
 
-from smart_factory.application.ports.alerts import ClaimedAlert
+from smart_factory.application.ports.alerts import AlertLeaseLostError, ClaimedAlert
 from smart_factory.application.services.alert_dispatch import AlertDispatcher
 from smart_factory.domain.alert import AnomalyAlert
 from smart_factory.domain.anomaly import AnomalySeverity
@@ -94,3 +94,46 @@ def test_caps_retry_delay_for_large_attempt_number() -> None:
         delay_seconds=300,
         error="RuntimeError",
     )
+
+
+def test_continues_batch_after_lease_is_lost_while_marking_delivery() -> None:
+    outbox = Mock()
+    sink = Mock()
+    logger = Mock()
+    first = claimed()
+    second = claimed()
+    outbox.claim.return_value = (first, second)
+    outbox.mark_delivered.side_effect = [AlertLeaseLostError("lease replaced"), None]
+
+    delivered = dispatcher(outbox, sink, logger).dispatch_once()
+
+    assert delivered == 1
+    assert sink.send.call_args_list == [call(first.alert), call(second.alert)]
+    assert outbox.mark_delivered.call_count == 2
+    assert logger.warning.call_args.args[0] == "anomaly_alert_lease_lost"
+    assert logger.warning.call_args.kwargs["extra"]["operation"] == "mark_delivered"
+    assert "lease replaced" not in str(logger.warning.call_args)
+
+
+def test_continues_batch_after_lease_is_lost_while_rescheduling() -> None:
+    outbox = Mock()
+    sink = Mock()
+    logger = Mock()
+    first = claimed()
+    second = claimed()
+    outbox.claim.return_value = (first, second)
+    sink.send.side_effect = [OSError("unavailable"), None]
+    outbox.reschedule.side_effect = AlertLeaseLostError("lease replaced")
+
+    delivered = dispatcher(outbox, sink, logger).dispatch_once()
+
+    assert delivered == 1
+    outbox.reschedule.assert_called_once_with(
+        first,
+        delay_seconds=5,
+        error="OSError",
+    )
+    outbox.mark_delivered.assert_called_once_with(second)
+    assert logger.warning.call_args.args[0] == "anomaly_alert_lease_lost"
+    assert logger.warning.call_args.kwargs["extra"]["operation"] == "reschedule"
+    assert "lease replaced" not in str(logger.warning.call_args)

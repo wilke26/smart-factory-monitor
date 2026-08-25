@@ -1,10 +1,12 @@
-# Architecture v0.11.0
+# Architecture v0.11.1
 
 ## Scope
 
 Version 0.11 retains the model-quality gate and adds durable alert routing without placing
 external HTTP inside MQTT processing. Eligible anomaly evidence is written to a
 transactional outbox, then a separate dispatcher leases and delivers it.
+Version 0.11.1 makes a lost lease an explicit non-fatal concurrency outcome so a stale
+worker cannot stop delivery of the remaining claimed batch.
 
 ```text
 Offline paths                                      Online path

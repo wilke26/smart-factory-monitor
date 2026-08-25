@@ -95,7 +95,10 @@ docker compose --profile alerts up -d
 The dispatcher logs `anomaly_alert_delivered` after a successful 2xx response and
 `anomaly_alert_failed` when it reschedules an attempt. Logs contain event IDs, attempt
 numbers, retry delay, and exception type, but not credentials, response bodies, or full
-URLs. Operators can inspect backlog health with:
+URLs. If a lease expires and is replaced before the original worker records delivery or
+retry state, that worker logs `anomaly_alert_lease_lost` and continues the rest of its
+batch. The current lease owner remains responsible for the event. Operators can inspect
+backlog health with:
 
 ```sql
 SELECT

@@ -61,3 +61,8 @@ claims, lease-loss protection, capped retry scheduling, credential-safe logging,
 HTTPS configuration, stable idempotency headers, and a real local webhook request. CI
 renders the hardened dispatcher deployment and verifies that an anomalous MQTT reading
 creates a durable outbox event.
+
+For v0.11.1, review findings were traced to their reachable runtime paths before changes
+were accepted. Tests now cover lease loss during both delivery completion and retry
+rescheduling, continued processing of later batch entries, and actual redirect rejection.
+The documented development-only HTTP path remains intentional and unchanged.
