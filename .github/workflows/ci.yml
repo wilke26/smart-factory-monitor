@@ -68,9 +68,9 @@ jobs:
           ignore-unfixed: true
           scanners: vuln
           severity: HIGH,CRITICAL
-      - name: Start database and train an ML artifact
+      - name: Start broker and database, then train an ML artifact
         run: |
-          docker compose up -d --wait timescaledb
+          docker compose up -d --wait mosquitto timescaledb
           docker compose run --rm schema-migrate
           docker compose exec -T timescaledb psql \
             -U smart_factory -d smart_factory -v ON_ERROR_STOP=1 \
@@ -82,7 +82,7 @@ jobs:
           allowed_publish=$(docker compose exec -T mosquitto mosquitto_pub \
             -d -V mqttv5 -h localhost -u smart-factory-simulator -P simulator_dev \
             -q 1 -t factory/hall-a/press-01/telemetry -m '{}' 2>&1)
-          echo "$allowed_publish" | grep -q 'RC:0'
+          echo "$allowed_publish" | grep -Eq 'RC:(0|16)'
           denied_publish=$(docker compose exec -T mosquitto mosquitto_pub \
             -d -V mqttv5 -h localhost -u smart-factory-simulator -P simulator_dev \
             -q 1 -t factory/hall-a/press-02/telemetry -m '{}' 2>&1)
