@@ -63,6 +63,7 @@ def test_run_connects_waits_and_closes(consumer_type: Mock, repository_type: Moc
         min_size=1,
         max_size=4,
         on_availability_change=observability.set_database_ready,
+        alert_severities=frozenset(),
     )
     consumer_type.return_value.connect.assert_called_once()
     consumer_type.return_value.close.assert_called_once()

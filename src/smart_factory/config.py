@@ -5,6 +5,9 @@ import re
 from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
+from urllib.parse import urlsplit
+
+from smart_factory.domain.anomaly import AnomalySeverity
 
 _MACHINE_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -162,6 +165,89 @@ class MlSettings:
                 "ML_MAX_EVALUATION_ANOMALY_RATE", "0.15", 0.0, 1.0
             ),
             maximum_feature_psi=_required_float_range("ML_MAX_FEATURE_PSI", "0.25", 0.0, 10.0),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AlertSettings:
+    """Configuration for durable webhook alert delivery."""
+
+    webhook_url: str | None
+    minimum_severity: AnomalySeverity
+    batch_size: int
+    poll_interval_seconds: float
+    request_timeout_seconds: float
+    lease_seconds: int
+    retry_base_seconds: float
+    retry_max_seconds: float
+    bearer_token: str | None = field(default=None, repr=False)
+    ca_cert_path: str | None = None
+    allow_insecure_http: bool = False
+
+    @property
+    def enabled(self) -> bool:
+        return self.webhook_url is not None
+
+    @property
+    def routed_severities(self) -> frozenset[AnomalySeverity]:
+        if self.minimum_severity is AnomalySeverity.HIGH:
+            return frozenset({AnomalySeverity.HIGH})
+        return frozenset(AnomalySeverity)
+
+    @classmethod
+    def from_env(cls) -> "AlertSettings":
+        webhook_url = _optional_text("ALERT_WEBHOOK_URL")
+        bearer_token = _optional_text("ALERT_WEBHOOK_BEARER_TOKEN")
+        ca_cert_path = _optional_text("ALERT_WEBHOOK_CA_CERT_PATH")
+        allow_insecure_http = _required_boolean("ALERT_WEBHOOK_ALLOW_INSECURE_HTTP", "false")
+        if webhook_url is None and any((bearer_token, ca_cert_path)):
+            raise ValueError("alert webhook credentials require ALERT_WEBHOOK_URL")
+        if webhook_url is not None:
+            parsed = urlsplit(webhook_url)
+            allowed_schemes = {"https", "http"} if allow_insecure_http else {"https"}
+            if (
+                parsed.scheme not in allowed_schemes
+                or parsed.hostname is None
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.fragment
+            ):
+                raise ValueError("ALERT_WEBHOOK_URL must be an absolute approved webhook URL")
+        if ca_cert_path is not None and (
+            not Path(ca_cert_path).is_file() or not os.access(ca_cert_path, os.R_OK)
+        ):
+            raise ValueError("ALERT_WEBHOOK_CA_CERT_PATH must identify a readable file")
+        severity_text = os.getenv("ALERT_MINIMUM_SEVERITY", "high").strip().lower()
+        try:
+            minimum_severity = AnomalySeverity(severity_text)
+        except ValueError as error:
+            raise ValueError("ALERT_MINIMUM_SEVERITY must be medium or high") from error
+        batch_size = _required_range("ALERT_BATCH_SIZE", "20", 1, 1_000)
+        request_timeout = _required_float_range("ALERT_REQUEST_TIMEOUT_SECONDS", "5.0", 0.1, 60.0)
+        lease_seconds = _required_range("ALERT_LEASE_SECONDS", "120", 1, 86_400)
+        if lease_seconds <= request_timeout * batch_size:
+            raise ValueError(
+                "ALERT_LEASE_SECONDS must exceed ALERT_BATCH_SIZE times "
+                "ALERT_REQUEST_TIMEOUT_SECONDS"
+            )
+        retry_base = _required_float_range("ALERT_RETRY_BASE_SECONDS", "5.0", 0.1, 3_600.0)
+        retry_max = _required_float_range("ALERT_RETRY_MAX_SECONDS", "300.0", 0.1, 86_400.0)
+        if retry_max < retry_base:
+            raise ValueError("ALERT_RETRY_MAX_SECONDS must not be below ALERT_RETRY_BASE_SECONDS")
+        return cls(
+            webhook_url=webhook_url,
+            minimum_severity=minimum_severity,
+            batch_size=batch_size,
+            poll_interval_seconds=_required_float_range(
+                "ALERT_POLL_INTERVAL_SECONDS", "2.0", 0.1, 300.0
+            ),
+            request_timeout_seconds=request_timeout,
+            lease_seconds=lease_seconds,
+            retry_base_seconds=retry_base,
+            retry_max_seconds=retry_max,
+            bearer_token=bearer_token,
+            ca_cert_path=ca_cert_path,
+            allow_insecure_http=allow_insecure_http,
         )
 
 

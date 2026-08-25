@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.10.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.11.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -17,7 +17,9 @@ verifies it before deserialization, adds default-deny Kubernetes network policy,
 container bases by digest, and scans the built image for actionable high and critical
 vulnerabilities. v0.10 adds a signed-artifact-bound reference distribution and an
 explicit offline evaluation command that gates post-training data on sample count,
-anomaly rate, and per-feature Population Stability Index (PSI).
+anomaly rate, and per-feature Population Stability Index (PSI). v0.11 adds durable,
+severity-filtered webhook alert routing through a transactional outbox and a separately
+deployable, lease-based dispatcher.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
@@ -32,7 +34,7 @@ This starts:
 - `mosquitto`: MQTT 5 broker on `localhost:1883`;
 - `timescaledb`: PostgreSQL 16 with the TimescaleDB extension on `localhost:5432`;
 - `simulator`: publishes to `factory/hall-a/press-01/telemetry`;
-- `schema-migrate`: applies the idempotent v0.4 anomaly schema and exits successfully;
+- `schema-migrate`: applies all idempotent database migrations and exits successfully;
 - `model-key-init`: creates or reuses the local Ed25519 model-signing key pair and exits;
 - `consumer`: validates messages, evaluates enabled detectors, and stores results.
 
@@ -44,6 +46,15 @@ rules are always active.
 
 The application logs are newline-delimited JSON. Look for `telemetry_published`,
 `telemetry_accepted`, `telemetry_processed`, and `anomaly_detected` events.
+
+Alerting remains disabled without a destination. Start the optional dispatcher and enable
+outbox creation with a verified HTTPS endpoint:
+
+```bash
+ALERT_WEBHOOK_URL=https://alerts.example.test/events \
+ALERT_WEBHOOK_BEARER_TOKEN=replace-me \
+docker compose --profile alerts up --build
+```
 
 Observe raw messages in another terminal:
 
@@ -72,6 +83,14 @@ docker compose exec timescaledb psql \
   -c 'SELECT machine_id, recorded_at, rule_id, severity, observed_value, threshold FROM anomaly_findings ORDER BY recorded_at DESC LIMIT 10;'
 ```
 
+Inspect pending or delivered alert events:
+
+```bash
+docker compose exec timescaledb psql \
+  -U smart_factory -d smart_factory \
+  -c 'SELECT event_id, severity, attempt_count, delivered_at FROM anomaly_alert_outbox ORDER BY created_at DESC LIMIT 10;'
+```
+
 ## Data flow
 
 ```text
@@ -98,10 +117,17 @@ MqttPublisher ── factory/<area>/<machine>/telemetry ──► Mosquitto
                                                             │
                                                             ▼
                                               TimescaleDB transaction
-                                           ┌───────────────────────┐
-                                           │ telemetry_readings    │
-                                           │ anomaly_findings      │
-                                           └───────────────────────┘
+                                           ┌────────────────────────┐
+                                           │ telemetry_readings     │
+                                           │ anomaly_findings       │
+                                           │ anomaly_alert_outbox   │
+                                           └───────────┬────────────┘
+                                                       │ leased batch
+                                                       ▼
+                                              AlertDispatcher
+                                                       │ HTTPS + Idempotency-Key
+                                                       ▼
+                                                external webhook
 ```
 
 The MQTT adapter is the trust boundary. It never forwards malformed JSON,
@@ -138,6 +164,23 @@ inconsistent findings, and acknowledges the permanently invalid collision.
 The consumer requests a bounded MQTT 5 receive window and a persistent broker session.
 The stable consumer client ID and configurable session expiry allow the broker to retain
 QoS messages across temporary disconnects and process restarts.
+
+## Durable webhook alerting
+
+When `ALERT_WEBHOOK_URL` is configured, findings at or above
+`ALERT_MINIMUM_SEVERITY` create an outbox row in the same transaction as the reading and
+finding. A QoS redelivery therefore cannot create a second alert event, and an external
+webhook outage does not block telemetry ingestion.
+
+The separate `smart-factory-alert-dispatcher` claims bounded batches with database leases,
+sends the immutable anomaly evidence as JSON, and marks a row delivered only after a 2xx
+response. Failures are rescheduled with capped exponential backoff. Delivery is
+at-least-once: a crash after the webhook accepts an event but before the database update
+can resend it, so every request carries the stable `event_id` as `Idempotency-Key`.
+
+HTTPS certificate and hostname verification use the platform trust store or an optional
+CA file. Redirects are rejected so credentials cannot cross to another endpoint. Plain
+HTTP requires the explicit development-only `ALERT_WEBHOOK_ALLOW_INSECURE_HTTP=true`.
 
 ## Multivariate ML anomaly detection
 
@@ -184,7 +227,7 @@ untrusted or corrupted file from reaching the unsafe deserializer, provided the 
 verification key is distributed through a trusted channel and the signing private key
 remains restricted to the trainer. Signing proves provenance and integrity; evaluation
 adds quality evidence, but neither is an approval workflow. Immutable versioned
-promotion, rollback, durable evaluation history, and alert routing remain
+promotion, rollback, and durable evaluation history remain
 production-hardening work. v0.9 format-v1 artifacts must be retrained for v0.10.
 
 ## Telemetry contract
@@ -254,6 +297,17 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `ML_MAX_FEATURE_PSI` | `0.25` | Highest accepted PSI for any feature |
 | `ML_SIGNATURE_PUBLIC_KEY_PATH` | empty | Required Ed25519 public key for ML inference |
 | `ML_SIGNING_PRIVATE_KEY_PATH` | empty | Required Ed25519 private key for offline training |
+| `ALERT_WEBHOOK_URL` | empty | Verified HTTPS destination; empty disables alert outbox creation |
+| `ALERT_WEBHOOK_ALLOW_INSECURE_HTTP` | `false` | Development-only opt-in for plain HTTP |
+| `ALERT_WEBHOOK_BEARER_TOKEN` | empty | Optional dispatcher-only bearer credential |
+| `ALERT_WEBHOOK_CA_CERT_PATH` | empty | Optional private CA for the webhook |
+| `ALERT_MINIMUM_SEVERITY` | `high` | Lowest severity routed (`medium` or `high`) |
+| `ALERT_BATCH_SIZE` | `20` | Maximum events leased per dispatch cycle |
+| `ALERT_POLL_INTERVAL_SECONDS` | `2.0` | Delay between dispatch cycles |
+| `ALERT_REQUEST_TIMEOUT_SECONDS` | `5.0` | Per-request timeout |
+| `ALERT_LEASE_SECONDS` | `120` | Batch lease; must exceed batch size × request timeout |
+| `ALERT_RETRY_BASE_SECONDS` | `5.0` | Initial delivery retry delay |
+| `ALERT_RETRY_MAX_SECONDS` | `300.0` | Maximum delivery retry delay |
 | `MONITORING_HOST` | `0.0.0.0` | Monitoring listener inside the consumer container |
 | `MONITORING_PORT` | `8000` | Monitoring listener port |
 | `MONITORING_HOST_PORT` | `8000` | Loopback-only Compose host port |
@@ -306,8 +360,9 @@ kubectl kustomize deploy/kubernetes/overlays/azure >/tmp/smart-factory-azure.yam
 Tests cover the contract, configuration, application service, observability, MQTT callbacks,
 valid/invalid ingestion pipelines, rule boundaries, model training/inference, pre-load
 signature verification, post-training anomaly/PSI gates, atomic idempotent persistence,
-and property-based JSON round
-trips. CI checks Python 3.12 and 3.13, audits dependencies, renders Kubernetes policy,
+transactional alert creation, leased retry delivery, real webhook requests, and
+property-based JSON round trips. CI checks Python 3.12 and 3.13, audits dependencies,
+renders Kubernetes policy,
 scans the built consumer image, exercises a denied broker topic, trains, evaluates, and
 reloads signed models in Docker, runs the complete Compose ingestion path, and enforces at least
 80% branch-aware coverage.
@@ -317,6 +372,7 @@ Run the services outside Docker with a reachable broker:
 ```bash
 MQTT_HOST=localhost smart-factory-consumer
 MQTT_HOST=localhost smart-factory-simulator
+ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatcher
 ```
 
 ## Design notes
@@ -336,12 +392,13 @@ MQTT_HOST=localhost smart-factory-simulator
 - [ADR 0010: signed model artifacts](docs/adr/0010-signed-model-artifacts.md)
 - [ADR 0011: least-privilege runtime and supply-chain baseline](docs/adr/0011-least-privilege-runtime-and-supply-chain.md)
 - [ADR 0012: post-training model evaluation gates](docs/adr/0012-post-training-model-evaluation-gates.md)
+- [ADR 0013: transactional alert outbox](docs/adr/0013-transactional-alert-outbox.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-Future versions can add alert routing, retention/compression policies, immutable
+Future versions can add retention/compression policies, immutable
 image/model promotion, durable evaluation history, backup/restore tests, and
 infrastructure-as-code for managed dependencies. Local Compose remains a development
 environment rather than a production deployment.

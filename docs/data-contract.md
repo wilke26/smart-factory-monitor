@@ -45,6 +45,15 @@ findings that would disagree with the original row.
 Anomaly findings reference that same key; their evidence contract is documented in
 [anomaly-detection.md](anomaly-detection.md).
 
+## Alert event contract
+
+An enabled alert route copies one finding's immutable evidence into
+`anomaly_alert_outbox` in the same transaction. The webhook JSON contains `event_id`,
+`machine_id`, `recorded_at`, `rule_id`, `severity`, `metric`, `observed_value`, `threshold`,
+`comparison`, and `message`. It contains neither the complete telemetry payload nor
+credentials. `event_id` is deterministic for the finding identity and is also sent as the
+HTTP `Idempotency-Key` so receivers can deduplicate at-least-once delivery.
+
 The ML feature contract uses the four numeric fields in the table order shown above and
 does not include identifiers or timestamps. A model artifact is bound separately to one
 `machine_id`; changing feature meaning or order requires a new artifact format.

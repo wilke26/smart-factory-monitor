@@ -79,9 +79,41 @@ machines are reported if any gate fails, so release automation can stop before a
 promotion step. These logs are not stored by the application and are separate from the
 online Prometheus endpoint.
 
+## Durable alert delivery
+
+Alert routing is disabled until `ALERT_WEBHOOK_URL` is configured. The consumer uses the
+configured minimum severity only to create an immutable outbox event in the existing
+telemetry transaction. It never performs HTTP. The optional alert-dispatcher profile owns
+delivery credentials and webhook connectivity:
+
+```bash
+ALERT_WEBHOOK_URL=https://alerts.example.test/events \
+ALERT_WEBHOOK_BEARER_TOKEN=replace-me \
+docker compose --profile alerts up -d
+```
+
+The dispatcher logs `anomaly_alert_delivered` after a successful 2xx response and
+`anomaly_alert_failed` when it reschedules an attempt. Logs contain event IDs, attempt
+numbers, retry delay, and exception type, but not credentials, response bodies, or full
+URLs. Operators can inspect backlog health with:
+
+```sql
+SELECT
+    COUNT(*) FILTER (WHERE delivered_at IS NULL) AS pending,
+    MAX(attempt_count) FILTER (WHERE delivered_at IS NULL) AS maximum_attempts,
+    MIN(created_at) FILTER (WHERE delivered_at IS NULL) AS oldest_pending
+FROM anomaly_alert_outbox;
+```
+
+Delivery is at-least-once. Receivers must deduplicate the `Idempotency-Key`. HTTPS is
+verified, redirects are rejected, and bearer credentials belong only to the dispatcher.
+`ALERT_LEASE_SECONDS` must remain greater than `ALERT_BATCH_SIZE` multiplied by
+`ALERT_REQUEST_TIMEOUT_SECONDS`. Persistent failures retry indefinitely with capped
+backoff; dead-letter policy and destination-specific escalation remain deployment choices.
+
 ## Remaining production work
 
 A shared or production environment still needs managed broker ACL provisioning and secret
 rotation, backup/restore tests, alert rules, durable metric collection, migration rollback
-policy, TimescaleDB retention/compression, durable model-evaluation evidence, and approved
+policy, alert dead-letter/escalation policy, TimescaleDB retention/compression, durable model-evaluation evidence, and approved
 immutable model promotion with key rotation.

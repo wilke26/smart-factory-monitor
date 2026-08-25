@@ -7,6 +7,7 @@ from smart_factory.application.ports.telemetry import TelemetryIdentityConflictE
 from smart_factory.domain.anomaly import AnomalyFinding, AnomalySeverity
 from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.database.telemetry_repository import (
+    INSERT_ALERT_OUTBOX,
     INSERT_ANOMALY,
     INSERT_TELEMETRY,
     SELECT_RECENT_TELEMETRY,
@@ -43,6 +44,7 @@ def repository_with_pool(
     *,
     rowcount: int = 1,
     on_availability_change: Mock | None = None,
+    alert_severities: frozenset[str] = frozenset(),
 ) -> tuple[PsycopgTelemetryRepository, MagicMock]:
     pool = MagicMock()
     connection = pool.connection.return_value.__enter__.return_value
@@ -52,6 +54,7 @@ def repository_with_pool(
         "unused",
         pool=pool,
         on_availability_change=on_availability_change,
+        alert_severities=alert_severities,
     )
     return repository, pool
 
@@ -127,6 +130,43 @@ def test_saves_findings_in_same_connection_transaction() -> None:
             )
         ],
     )
+
+
+def test_enqueues_configured_alert_severity_in_the_same_transaction() -> None:
+    repository, pool = repository_with_pool(alert_severities=frozenset({"high"}))
+    measurement = reading()
+    anomaly = finding()
+
+    repository.save(measurement, (anomaly,))
+
+    connection = pool.connection.return_value.__enter__.return_value
+    cursor = connection.cursor.return_value.__enter__.return_value
+    assert cursor.executemany.call_count == 2
+    query, rows = cursor.executemany.call_args_list[1].args
+    assert query == INSERT_ALERT_OUTBOX
+    assert len(rows) == 1
+    assert rows[0][1:] == (
+        "press-01",
+        measurement.timestamp,
+        "temperature-high",
+        "high",
+        "temperature_c",
+        95.0,
+        90.0,
+        ">",
+        "temperature_c=95 exceeds maximum 90",
+    )
+
+
+def test_does_not_enqueue_a_severity_below_alert_policy() -> None:
+    repository, pool = repository_with_pool(alert_severities=frozenset({"high"}))
+    medium = finding().model_copy(update={"severity": AnomalySeverity.MEDIUM})
+
+    repository.save(reading(), (medium,))
+
+    connection = pool.connection.return_value.__enter__.return_value
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.executemany.assert_called_once()
 
 
 def test_duplicate_is_idempotent() -> None:

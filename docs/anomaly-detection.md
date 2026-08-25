@@ -29,6 +29,10 @@ fields make historical decisions explainable even if configuration later changes
 These values are business thresholds, not validation limits. For example, 95 °C is a
 valid sensor value that crosses the operational temperature rule.
 
+When webhook alerting is enabled, the configured minimum severity selects which persisted
+findings also receive a transactional outbox event. This routing policy does not alter
+detection or suppress storage of lower-severity findings.
+
 ## Isolation Forest
 
 The optional ML detector scores the vector `(temperature_c, vibration_mm_s, power_kw,

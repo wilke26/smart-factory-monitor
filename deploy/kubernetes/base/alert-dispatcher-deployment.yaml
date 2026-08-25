@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: smart-factory-simulator
+  name: smart-factory-alert-dispatcher
   labels:
-    app.kubernetes.io/name: smart-factory-simulator
+    app.kubernetes.io/name: smart-factory-alert-dispatcher
     app.kubernetes.io/part-of: smart-factory-monitor
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: smart-factory-simulator
+      app.kubernetes.io/name: smart-factory-alert-dispatcher
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: smart-factory-simulator
+        app.kubernetes.io/name: smart-factory-alert-dispatcher
         app.kubernetes.io/part-of: smart-factory-monitor
     spec:
       automountServiceAccountToken: false
@@ -21,52 +21,43 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
-        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: simulator
+        - name: alert-dispatcher
           image: smart-factory-monitor:0.11.0
           imagePullPolicy: IfNotPresent
-          command: ["smart-factory-simulator"]
+          command: ["smart-factory-alert-dispatcher"]
           envFrom:
             - configMapRef:
                 name: smart-factory-config
           env:
-            - name: MQTT_CLIENT_ID
-              value: smart-factory-simulator-press-01
-            - name: MQTT_USERNAME
+            - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: smart-factory-runtime
-                  key: simulator-mqtt-username
-            - name: MQTT_PASSWORD
+                  key: database-url
+            - name: ALERT_WEBHOOK_BEARER_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: smart-factory-runtime
-                  key: simulator-mqtt-password
+                  key: alert-webhook-token
+                  optional: true
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              memory: 128Mi
             limits:
-              cpu: 250m
-              memory: 256Mi
+              cpu: 500m
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           volumeMounts:
-            - name: mqtt-tls
-              mountPath: /etc/mqtt-tls
-              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: mqtt-tls
-          secret:
-            secretName: simulator-mqtt-tls
-            defaultMode: 0440
         - name: tmp
           emptyDir: {}

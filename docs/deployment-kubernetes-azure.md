@@ -78,6 +78,7 @@ az aks get-credentials \
 
 kubectl apply -k deploy/kubernetes/overlays/azure
 kubectl -n smart-factory rollout status deployment/smart-factory-consumer
+kubectl -n smart-factory rollout status deployment/smart-factory-alert-dispatcher
 ```
 
 For an ABAC-enabled ACR, use the repository-reader role assignment described by Azure
@@ -90,17 +91,24 @@ controlled external training/promotion job must hold it, publish both `.joblib` 
 `.joblib.sig`, and never place the private key in the shared model claim. The consumer
 mounts only the public-key Secret.
 
+The alert dispatcher reads its webhook endpoint and retry policy from the generated
+ConfigMap, its database URL from `smart-factory-runtime`, and the optional
+`alert-webhook-token` from that same Secret. The consumer receives no webhook credential;
+it only needs the non-secret endpoint setting to enable transactional outbox creation.
+Replace the example endpoint before deployment. For a private webhook CA, add a dedicated
+read-only Secret mount and set `ALERT_WEBHOOK_CA_CERT_PATH` in the overlay.
+
 ## Network-policy boundary
 
 The base applies default-deny ingress and egress to application pods, then permits DNS,
-consumer monitoring ingress on 8000, MQTT/TLS egress on 8883, and PostgreSQL egress on
-5432. The cluster CNI must enforce Kubernetes `NetworkPolicy`.
+consumer monitoring ingress on 8000, MQTT/TLS egress on 8883, webhook HTTPS egress on 443,
+and PostgreSQL egress on 5432. The cluster CNI must enforce Kubernetes `NetworkPolicy`.
 
 Standard policy cannot select an external managed service by hostname. The portable base
 therefore permits the broker/database ports to any IPv4 address. Before production use,
 add overlay-specific `ipBlock` CIDRs or a CNI-native FQDN policy for the actual managed
-broker and database endpoints. If custom ports or IPv6 are used, update and re-render the
-policy deliberately.
+broker, database, and webhook endpoints. If custom ports or IPv6 are used, update and
+re-render the policy deliberately.
 
 ## Operational checks
 
@@ -113,4 +121,5 @@ curl --fail http://127.0.0.1:8000/metrics
 
 Production rollout still needs endpoint-specific network destinations, managed broker ACL
 creation, certificate/credential/signing-key rotation, schema-migration automation,
-backups, monitoring/alerts, and an approved immutable model-promotion workflow.
+backups, durable metrics and alert escalation policy, and an approved immutable
+model-promotion workflow.

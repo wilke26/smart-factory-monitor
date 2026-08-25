@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from smart_factory.config import MlSettings, MqttSecuritySettings, Settings
+from smart_factory.config import AlertSettings, MlSettings, MqttSecuritySettings, Settings
+from smart_factory.domain.anomaly import AnomalySeverity
 
 
 def test_defaults_publish_to_v01_acceptance_topic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -317,3 +318,113 @@ def test_rejects_invalid_machine_registry_targets(
 
     with pytest.raises(ValueError, match=r"ML_MACHINE_IDS|invalid machine ID"):
         MlSettings.from_env()
+
+
+def test_alerts_default_to_disabled_high_severity(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "ALERT_WEBHOOK_URL",
+        "ALERT_WEBHOOK_ALLOW_INSECURE_HTTP",
+        "ALERT_WEBHOOK_BEARER_TOKEN",
+        "ALERT_WEBHOOK_CA_CERT_PATH",
+        "ALERT_MINIMUM_SEVERITY",
+        "ALERT_BATCH_SIZE",
+        "ALERT_POLL_INTERVAL_SECONDS",
+        "ALERT_REQUEST_TIMEOUT_SECONDS",
+        "ALERT_LEASE_SECONDS",
+        "ALERT_RETRY_BASE_SECONDS",
+        "ALERT_RETRY_MAX_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = AlertSettings.from_env()
+
+    assert settings.enabled is False
+    assert settings.minimum_severity is AnomalySeverity.HIGH
+    assert settings.routed_severities == frozenset({AnomalySeverity.HIGH})
+    assert settings.batch_size == 20
+    assert settings.lease_seconds == 120
+
+
+def test_reads_verified_alert_webhook_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    ca_cert = tmp_path / "alerts-ca.pem"
+    ca_cert.touch()
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://alerts.example.test/events")
+    monkeypatch.setenv("ALERT_WEBHOOK_BEARER_TOKEN", "secret")
+    monkeypatch.setenv("ALERT_WEBHOOK_CA_CERT_PATH", str(ca_cert))
+    monkeypatch.setenv("ALERT_MINIMUM_SEVERITY", "medium")
+
+    settings = AlertSettings.from_env()
+
+    assert settings.enabled is True
+    assert settings.webhook_url == "https://alerts.example.test/events"
+    assert settings.routed_severities == frozenset(AnomalySeverity)
+    assert settings.bearer_token == "secret"
+    assert settings.ca_cert_path == str(ca_cert)
+
+
+def test_rejects_plain_http_alert_webhook_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "http://alerts.example.test/events")
+
+    with pytest.raises(ValueError, match="approved webhook URL"):
+        AlertSettings.from_env()
+
+
+def test_allows_explicit_development_http_webhook(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "http://alerts.example.test/events")
+    monkeypatch.setenv("ALERT_WEBHOOK_ALLOW_INSECURE_HTTP", "true")
+
+    assert AlertSettings.from_env().allow_insecure_http is True
+
+
+@pytest.mark.parametrize(
+    ("environment", "message"),
+    [
+        ({"ALERT_WEBHOOK_BEARER_TOKEN": "secret"}, "require ALERT_WEBHOOK_URL"),
+        (
+            {
+                "ALERT_WEBHOOK_URL": "https://alerts.example.test/events",
+                "ALERT_MINIMUM_SEVERITY": "critical",
+            },
+            "must be medium or high",
+        ),
+        (
+            {
+                "ALERT_WEBHOOK_URL": "https://alerts.example.test/events",
+                "ALERT_REQUEST_TIMEOUT_SECONDS": "30",
+                "ALERT_LEASE_SECONDS": "600",
+            },
+            "must exceed ALERT_BATCH_SIZE",
+        ),
+        (
+            {
+                "ALERT_WEBHOOK_URL": "https://alerts.example.test/events",
+                "ALERT_RETRY_BASE_SECONDS": "60",
+                "ALERT_RETRY_MAX_SECONDS": "30",
+            },
+            "must not be below",
+        ),
+    ],
+)
+def test_rejects_invalid_alert_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    environment: dict[str, str],
+    message: str,
+) -> None:
+    for name in (
+        "ALERT_WEBHOOK_URL",
+        "ALERT_WEBHOOK_BEARER_TOKEN",
+        "ALERT_MINIMUM_SEVERITY",
+        "ALERT_REQUEST_TIMEOUT_SECONDS",
+        "ALERT_LEASE_SECONDS",
+        "ALERT_RETRY_BASE_SECONDS",
+        "ALERT_RETRY_MAX_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError, match=message):
+        AlertSettings.from_env()

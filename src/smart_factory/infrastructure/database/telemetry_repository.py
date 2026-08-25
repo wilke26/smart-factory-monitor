@@ -6,6 +6,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Any, Protocol, cast
+from uuid import NAMESPACE_URL, uuid5
 
 from smart_factory.application.ports.telemetry import TelemetryIdentityConflictError
 from smart_factory.domain.anomaly import AnomalyFinding
@@ -37,6 +38,23 @@ INSERT INTO anomaly_findings (
     message
 )
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (machine_id, recorded_at, rule_id) DO NOTHING
+"""
+
+INSERT_ALERT_OUTBOX = """
+INSERT INTO anomaly_alert_outbox (
+    event_id,
+    machine_id,
+    recorded_at,
+    rule_id,
+    severity,
+    metric,
+    observed_value,
+    threshold,
+    comparison,
+    message
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (machine_id, recorded_at, rule_id) DO NOTHING
 """
 
@@ -128,6 +146,7 @@ class PsycopgTelemetryRepository:
         max_size: int = 4,
         pool: ConnectionPoolLike | None = None,
         on_availability_change: Callable[[bool], None] | None = None,
+        alert_severities: frozenset[str] = frozenset(),
     ) -> None:
         self._pool = pool or _create_pool(
             database_url,
@@ -135,6 +154,7 @@ class PsycopgTelemetryRepository:
             max_size=max_size,
         )
         self._on_availability_change = on_availability_change
+        self._alert_severities = alert_severities
 
     def open(self, *, timeout: float = 10.0) -> None:
         """Open the pool and fail fast if the database is not ready."""
@@ -204,6 +224,38 @@ class PsycopgTelemetryRepository:
                             for finding in findings
                         ],
                     )
+                    alert_findings = tuple(
+                        finding
+                        for finding in findings
+                        if finding.severity.value in self._alert_severities
+                    )
+                    if alert_findings:
+                        cursor.executemany(
+                            INSERT_ALERT_OUTBOX,
+                            [
+                                (
+                                    uuid5(
+                                        NAMESPACE_URL,
+                                        (
+                                            "smart-factory-alert:"
+                                            f"{reading.machine_id}:"
+                                            f"{reading.timestamp.isoformat()}:"
+                                            f"{finding.rule_id}"
+                                        ),
+                                    ),
+                                    reading.machine_id,
+                                    reading.timestamp,
+                                    finding.rule_id,
+                                    finding.severity.value,
+                                    finding.metric,
+                                    finding.observed_value,
+                                    finding.threshold,
+                                    finding.comparison,
+                                    finding.message,
+                                )
+                                for finding in alert_findings
+                            ],
+                        )
         except TelemetryIdentityConflictError:
             self._record_availability(True)
             raise

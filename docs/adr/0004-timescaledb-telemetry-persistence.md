@@ -27,4 +27,6 @@ different measurement values is rejected as a permanent conflict.
 - Local Compose gains a stateful service and credential configuration.
 - Fresh volumes use entrypoint initialization; existing volumes receive ordered SQL files
   through a tracked, transactional Compose migration job.
+- v0.11 extends the same transaction with a deduplicated alert outbox for configured
+  anomaly severities; external delivery remains a separate process.
 - A production deployment still needs coordinated migration rollout and rollback policy.

@@ -9,7 +9,7 @@ from psycopg import OperationalError
 from smart_factory.application.ports.anomaly import AnomalyDetector
 from smart_factory.application.services.anomaly_detection import CompositeAnomalyDetector
 from smart_factory.application.services.telemetry import TelemetryApplicationService
-from smart_factory.config import MlSettings, Settings
+from smart_factory.config import AlertSettings, MlSettings, Settings
 from smart_factory.domain.services.anomaly_detection import (
     AnomalyThresholds,
     RuleBasedAnomalyDetector,
@@ -69,6 +69,7 @@ def run(
 ) -> None:
     """Consume telemetry until a termination signal is received."""
     runtime_observability = observability or RuntimeObservability()
+    alert_settings = AlertSettings.from_env()
     detector = build_anomaly_detector(
         settings,
         ml_settings or MlSettings.from_env(),
@@ -79,6 +80,9 @@ def run(
         min_size=settings.database_pool_min_size,
         max_size=settings.database_pool_max_size,
         on_availability_change=runtime_observability.set_database_ready,
+        alert_severities=frozenset(severity.value for severity in alert_settings.routed_severities)
+        if alert_settings.enabled
+        else frozenset(),
     )
     service = TelemetryApplicationService(
         repository=repository,

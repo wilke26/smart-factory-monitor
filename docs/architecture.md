@@ -1,11 +1,10 @@
-# Architecture v0.10.0
+# Architecture v0.11.0
 
 ## Scope
 
-Version 0.10 retains the v0.9 integrity and least-privilege boundaries and adds an
-independent model-quality gate. Signed artifacts carry per-feature training reference
-distributions. The evaluator verifies those artifacts, reads only post-training telemetry,
-and produces a pass/fail result without changing the online registry.
+Version 0.11 retains the model-quality gate and adds durable alert routing without placing
+external HTTP inside MQTT processing. Eligible anomaly evidence is written to a
+transactional outbox, then a separate dispatcher leases and delivers it.
 
 ```text
 Offline paths                                      Online path
@@ -22,19 +21,25 @@ model-trainer → reference + sign → registry        CompositeAnomalyDetector
                                                        │
                                                        ▼ one transaction
                                       telemetry_readings + anomaly_findings
+                                               + alert outbox
+                                                       │
+                                                       ▼
+                                      alert-dispatcher → HTTPS webhook
 ```
 
 ## Dependency direction
 
 - `domain` owns validated telemetry, finding contracts, and deterministic rules.
-- `application` owns the technology-neutral `AnomalyDetector` port, detector composition,
-  processing orchestration, and persistence ports.
+- `application` owns the technology-neutral detector, alert-outbox and alert-sink ports,
+  processing orchestration, detector composition, and retry scheduling.
 - `infrastructure.ml` owns scikit-learn training, artifact signing and verification,
   reference distributions, offline evaluation, registry validation, and machine-aware
   inference dispatch.
-- `infrastructure.database` supplies both atomic persistence and bounded historical reads.
-- `consumer_main`, `train_model_main`, and `evaluate_model_main` are separate composition
-  roots.
+- `infrastructure.database` supplies atomic telemetry/outbox persistence, leased alert
+  claims, delivery-state transitions, and bounded historical reads.
+- `infrastructure.alerts` owns verified webhook transport.
+- `consumer_main`, `alert_dispatcher_main`, `train_model_main`, and `evaluate_model_main`
+  are separate composition roots.
 
 The real-time application service sees only the detector protocol. It neither imports
 scikit-learn nor decides whether ML is enabled.
@@ -80,6 +85,21 @@ The MQTT 5 consumer requests a persistent session with a stable client ID and a 
 Receive Maximum. This preserves broker-side QoS state across reconnects for the configured
 expiry period while limiting unacknowledged inbound work.
 
+## Alert delivery semantics
+
+When alerting is enabled, the telemetry transaction inserts immutable evidence into
+`anomaly_alert_outbox` for configured severities. Its natural finding identity prevents
+duplicate outbox rows on QoS redelivery. The consumer has no webhook dependency and an
+external outage does not delay MQTT acknowledgement after the database commits.
+
+The dispatcher claims available rows with `FOR UPDATE SKIP LOCKED`, assigns a bounded
+lease, and increments the attempt count. It marks delivery only after a 2xx response;
+failures clear the lease and schedule capped exponential backoff. The configured lease
+must exceed the worst-case serial duration of the claimed batch. A crash after remote
+acceptance but before the delivery update can resend the event, so the deterministic
+event UUID is also the HTTP `Idempotency-Key`. This is at-least-once delivery, not
+exactly-once delivery.
+
 ## Operational visibility
 
 The consumer composition root shares one thread-safe runtime-observability object between
@@ -100,14 +120,15 @@ as a healthy database interaction.
 
 Isolation Forest detects statistical rarity, not equipment failure and not causality.
 Handling of late readings at or before the training boundary, labelled outcome evaluation,
-model approval, durable evaluation history, key rotation, alerts, backups, retention/compression, managed-service
+model approval, durable evaluation history, key rotation, destination-specific alert
+escalation policy, backups, retention/compression, managed-service
 infrastructure, and automatic deployment remain explicit future work. PSI indicates
 distribution change, not failure causality or predictive accuracy.
 
 ## Deployment boundary
 
-The base Kubernetes manifests deploy only the consumer, simulator, monitoring service,
-model-registry claim, and network policies. They do not embed a broker, database,
+The base Kubernetes manifests deploy the consumer, alert dispatcher, simulator,
+monitoring service, model-registry claim, and network policies. They do not embed a broker, database,
 passwords, certificates, private signing keys, or production SQL migration credentials.
 Runtime values come from a ConfigMap and named Secrets; the consumer mounts only the
 model verification public key. The Azure overlay selects an Azure Files CSI storage class
@@ -115,5 +136,5 @@ and an ACR image. Database schema migration remains an explicit release prerequi
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,
-MQTT/TLS port 8883, and PostgreSQL port 5432. Production overlays must narrow destination
+HTTPS port 443, MQTT/TLS port 8883, and PostgreSQL port 5432. Production overlays must narrow destination
 CIDRs or use a CNI with FQDN-aware policy. Enforcement also depends on the cluster CNI.

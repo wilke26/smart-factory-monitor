@@ -1,6 +1,11 @@
 """Application services."""
 
+from smart_factory.application.services.alert_dispatch import AlertDispatcher
 from smart_factory.application.services.anomaly_detection import CompositeAnomalyDetector
 from smart_factory.application.services.telemetry import TelemetryApplicationService
 
-__all__ = ["CompositeAnomalyDetector", "TelemetryApplicationService"]
+__all__ = [
+    "AlertDispatcher",
+    "CompositeAnomalyDetector",
+    "TelemetryApplicationService",
+]

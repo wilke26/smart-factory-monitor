@@ -55,3 +55,9 @@ For v0.10, tests cover artifact-bound reference distributions, stable and shifte
 windows, anomaly-rate and minimum-sample gates, strict post-training database selection,
 multi-machine failure aggregation, and key requirements. Compose acceptance evaluates
 fresh post-training data for both signed machine models before enabling online inference.
+
+For v0.11, tests cover severity routing, atomic and deduplicated outbox insertion, leased
+claims, lease-loss protection, capped retry scheduling, credential-safe logging, strict
+HTTPS configuration, stable idempotency headers, and a real local webhook request. CI
+renders the hardened dispatcher deployment and verifies that an anomalous MQTT reading
+creates a durable outbox event.

@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
+  - alert-dispatcher-deployment.yaml
   - consumer-deployment.yaml
   - consumer-service.yaml
   - simulator-deployment.yaml
@@ -33,5 +34,14 @@ configMapGenerator:
       - ML_MODEL_DIRECTORY=/models
       - ML_MACHINE_IDS=press-01
       - ML_SIGNATURE_PUBLIC_KEY_PATH=/etc/model-signing/public.pem
+      - ALERT_WEBHOOK_URL=https://alerts.example.internal/events
+      - ALERT_WEBHOOK_ALLOW_INSECURE_HTTP=false
+      - ALERT_MINIMUM_SEVERITY=high
+      - ALERT_BATCH_SIZE=20
+      - ALERT_POLL_INTERVAL_SECONDS=2.0
+      - ALERT_REQUEST_TIMEOUT_SECONDS=5.0
+      - ALERT_LEASE_SECONDS=120
+      - ALERT_RETRY_BASE_SECONDS=5.0
+      - ALERT_RETRY_MAX_SECONDS=300.0
       - MONITORING_HOST=0.0.0.0
       - MONITORING_PORT=8000
