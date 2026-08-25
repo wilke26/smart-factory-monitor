@@ -50,3 +50,8 @@ cross-machine publish. CI renders default-deny network policy, pins the image sc
 commit, and rejects high or critical vulnerabilities with an available fix in the built
 consumer image. Base container and third-party Compose image tags are resolved to
 immutable manifest digests.
+
+For v0.10, tests cover artifact-bound reference distributions, stable and shifted feature
+windows, anomaly-rate and minimum-sample gates, strict post-training database selection,
+multi-machine failure aggregation, and key requirements. Compose acceptance evaluates
+fresh post-training data for both signed machine models before enabling online inference.

@@ -50,3 +50,5 @@ does not include identifiers or timestamps. A model artifact is bound separately
 `machine_id`; changing feature meaning or order requires a new artifact format.
 In the v0.7 registry the trusted artifact filename is `<machine_id>.joblib` and must match
 the embedded artifact identity.
+Artifact format v2 additionally binds deterministic histogram edges and training
+proportions for these exact features. They are evaluation metadata, not telemetry fields.

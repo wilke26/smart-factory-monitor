@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from datetime import datetime
 from typing import Any, Protocol, cast
 
 from smart_factory.application.ports.telemetry import TelemetryIdentityConflictError
@@ -49,6 +50,20 @@ SELECT
     production_rate
 FROM telemetry_readings
 WHERE machine_id = %s
+ORDER BY recorded_at DESC
+LIMIT %s
+"""
+
+SELECT_TELEMETRY_SINCE = """
+SELECT
+    machine_id,
+    recorded_at,
+    temperature_c,
+    vibration_mm_s,
+    power_kw,
+    production_rate
+FROM telemetry_readings
+WHERE machine_id = %s AND recorded_at > %s
 ORDER BY recorded_at DESC
 LIMIT %s
 """
@@ -208,6 +223,27 @@ class PsycopgTelemetryRepository:
             self._record_availability(False)
             raise
         self._record_availability(True)
+        return self._readings_from_rows(rows)
+
+    def load_readings_since(
+        self,
+        machine_id: str,
+        since: datetime,
+        limit: int,
+    ) -> list[TelemetryReading]:
+        """Load a bounded post-training evaluation window for one machine."""
+        try:
+            with self._pool.connection() as connection, connection.cursor() as cursor:
+                cursor.execute(SELECT_TELEMETRY_SINCE, (machine_id, since, limit))
+                rows = cursor.fetchall()
+        except Exception:
+            self._record_availability(False)
+            raise
+        self._record_availability(True)
+        return self._readings_from_rows(rows)
+
+    @staticmethod
+    def _readings_from_rows(rows: list[tuple[object, ...]]) -> list[TelemetryReading]:
         return [
             TelemetryReading(
                 machine_id=cast(str, row[0]),

@@ -52,9 +52,35 @@ consumer rollout. The command reuses a valid matching pair rather than rotating 
 model, while `coverage="uncovered"` counts valid readings for machines outside the active
 registry. These aggregate labels remain bounded regardless of machine fleet size.
 
+## Post-training evaluation
+
+Artifact format v2 binds the training reference distribution to the signed model bytes.
+After enough new telemetry has arrived, run:
+
+```bash
+ML_MACHINE_IDS=press-01,press-02 \
+  docker compose --profile tools run --rm model-evaluator
+```
+
+For each machine the evaluator verifies the signature, reads at most
+`ML_EVALUATION_LIMIT` rows with `recorded_at` later than the artifact's recorded training
+window end,
+and logs `evaluation_samples`, `anomaly_rate`, every feature PSI, the largest PSI, and the
+failed gates. The command succeeds only when every configured machine has at least
+`ML_EVALUATION_MINIMUM_SAMPLES`, stays at or below
+`ML_MAX_EVALUATION_ANOMALY_RATE`, and stays at or below `ML_MAX_FEATURE_PSI` for all
+features.
+
+This gives deployment automation a deterministic quality gate but deliberately does not
+promote the model. Archive the structured result outside the container if durable evidence
+is required. Late readings at or before the stored training boundary are deliberately not
+treated as post-training evidence. Existing format-v1 artifacts are incompatible and must
+be retrained.
+
 ## Remaining controls
 
 The local registry is not a production model platform. Signatures establish integrity
-and provenance under the configured key but not model quality or approval. Immutable
-version storage, rollback, hold-out evaluation, drift policy, controlled promotion, key
-rotation, and registry distribution remain explicit future work.
+and provenance under the configured key. The offline gates provide post-training
+distribution evidence but not labelled accuracy or approval. Immutable version storage,
+rollback, controlled promotion, durable evaluation history, key rotation, and registry
+distribution remain explicit future work.

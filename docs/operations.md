@@ -70,9 +70,18 @@ Third-party Compose services are also pinned by manifest digest. A promoted prod
 image should itself be stored and deployed by digest because package repositories can
 change after the source-level base pin.
 
+## Model evaluation gate
+
+The offline evaluator emits one structured `ml_model_evaluated` event per configured
+machine. It includes bounded sample count, anomaly rate, per-feature PSI, maximum PSI,
+pass/fail status, and stable failed-gate names. The process exits unsuccessfully after all
+machines are reported if any gate fails, so release automation can stop before an external
+promotion step. These logs are not stored by the application and are separate from the
+online Prometheus endpoint.
+
 ## Remaining production work
 
 A shared or production environment still needs managed broker ACL provisioning and secret
 rotation, backup/restore tests, alert rules, durable metric collection, migration rollback
-policy, TimescaleDB retention/compression, and approved immutable model promotion with key
-rotation.
+policy, TimescaleDB retention/compression, durable model-evaluation evidence, and approved
+immutable model promotion with key rotation.

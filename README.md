@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.9.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.10.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -15,7 +15,9 @@ next successful database operation. v0.9 authenticates the bundled broker with
 least-privilege topic ACLs, signs every ML artifact with Ed25519 before publication,
 verifies it before deserialization, adds default-deny Kubernetes network policy, pins
 container bases by digest, and scans the built image for actionable high and critical
-vulnerabilities.
+vulnerabilities. v0.10 adds a signed-artifact-bound reference distribution and an
+explicit offline evaluation command that gates post-training data on sample count,
+anomaly rate, and per-feature Population Stability Index (PSI).
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
@@ -147,6 +149,13 @@ After at least 100 readings for every configured training machine have been coll
 
 ```bash
 docker compose --profile tools run --rm model-trainer
+```
+
+After a separate post-training window has arrived, evaluate it before an external
+promotion decision and only then restart the consumer with the approved registry:
+
+```bash
+docker compose --profile tools run --rm model-evaluator
 ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
 ```
 
@@ -162,12 +171,21 @@ An enabled consumer fails fast with a dedicated artifact error if the model is m
 unreadable, or invalid; permanent model configuration failures never enter the
 infrastructure retry loop.
 
+Artifact format v2 also records decile-based training proportions for every feature.
+The evaluator verifies the signed artifact, loads only readings with timestamps after the
+recorded `training_window_end`, and fails unless the bounded window meets all configured gates: minimum
+sample count, maximum predicted anomaly rate, and maximum per-feature PSI. Its structured
+`ml_model_evaluated` log contains the complete result for each machine. A successful
+evaluation is evidence for an external promotion decision; the command never activates,
+copies, or replaces a deployed model.
+
 The artifact still uses joblib/pickle semantics. Signature verification prevents an
 untrusted or corrupted file from reaching the unsafe deserializer, provided the public
 verification key is distributed through a trusted channel and the signing private key
-remains restricted to the trainer. Signing proves provenance and integrity; it is not an
-approval workflow. Immutable promotion, rollback, evaluation datasets, and drift
-monitoring remain production-hardening work.
+remains restricted to the trainer. Signing proves provenance and integrity; evaluation
+adds quality evidence, but neither is an approval workflow. Immutable versioned
+promotion, rollback, durable evaluation history, and alert routing remain
+production-hardening work. v0.9 format-v1 artifacts must be retrained for v0.10.
 
 ## Telemetry contract
 
@@ -230,6 +248,10 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `ML_CONTAMINATION` | `0.05` | Expected anomaly fraction during training |
 | `ML_MINIMUM_TRAINING_SAMPLES` | `100` | Minimum history required to train |
 | `ML_TRAINING_LIMIT` | `10000` | Maximum recent readings loaded for training |
+| `ML_EVALUATION_MINIMUM_SAMPLES` | `30` | Minimum post-training evaluation window |
+| `ML_EVALUATION_LIMIT` | `1000` | Maximum post-training readings evaluated per machine |
+| `ML_MAX_EVALUATION_ANOMALY_RATE` | `0.15` | Highest accepted model anomaly fraction |
+| `ML_MAX_FEATURE_PSI` | `0.25` | Highest accepted PSI for any feature |
 | `ML_SIGNATURE_PUBLIC_KEY_PATH` | empty | Required Ed25519 public key for ML inference |
 | `ML_SIGNING_PRIVATE_KEY_PATH` | empty | Required Ed25519 private key for offline training |
 | `MONITORING_HOST` | `0.0.0.0` | Monitoring listener inside the consumer container |
@@ -283,10 +305,11 @@ kubectl kustomize deploy/kubernetes/overlays/azure >/tmp/smart-factory-azure.yam
 
 Tests cover the contract, configuration, application service, observability, MQTT callbacks,
 valid/invalid ingestion pipelines, rule boundaries, model training/inference, pre-load
-signature verification, atomic idempotent persistence, and property-based JSON round
+signature verification, post-training anomaly/PSI gates, atomic idempotent persistence,
+and property-based JSON round
 trips. CI checks Python 3.12 and 3.13, audits dependencies, renders Kubernetes policy,
-scans the built consumer image, exercises a denied broker topic, trains and reloads a
-signed model in Docker, runs the complete Compose ingestion path, and enforces at least
+scans the built consumer image, exercises a denied broker topic, trains, evaluates, and
+reloads signed models in Docker, runs the complete Compose ingestion path, and enforces at least
 80% branch-aware coverage.
 
 Run the services outside Docker with a reachable broker:
@@ -312,12 +335,13 @@ MQTT_HOST=localhost smart-factory-simulator
 - [ADR 0009: verified MQTT identity and Kubernetes baseline](docs/adr/0009-secure-mqtt-kubernetes-baseline.md)
 - [ADR 0010: signed model artifacts](docs/adr/0010-signed-model-artifacts.md)
 - [ADR 0011: least-privilege runtime and supply-chain baseline](docs/adr/0011-least-privilege-runtime-and-supply-chain.md)
+- [ADR 0012: post-training model evaluation gates](docs/adr/0012-post-training-model-evaluation-gates.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-v0.10 can add alert routing, offline model evaluation and drift thresholds,
-retention/compression policies, immutable image/model promotion, backup/restore tests,
-and infrastructure-as-code for managed dependencies. Local Compose remains a development
+Future versions can add alert routing, retention/compression policies, immutable
+image/model promotion, durable evaluation history, backup/restore tests, and
+infrastructure-as-code for managed dependencies. Local Compose remains a development
 environment rather than a production deployment.

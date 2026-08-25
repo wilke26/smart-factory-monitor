@@ -7,8 +7,11 @@ from smart_factory.infrastructure.ml.artifact_signing import (
 )
 from smart_factory.infrastructure.ml.isolation_forest import (
     IsolationForestAnomalyDetector,
+    IsolationForestModelEvaluator,
     IsolationForestTrainer,
     MlArtifactError,
+    ModelEvaluationError,
+    ModelEvaluationReport,
 )
 from smart_factory.infrastructure.ml.registry import MachineModelRegistry
 
@@ -17,7 +20,10 @@ __all__ = [
     "ArtifactSigningError",
     "ArtifactVerifier",
     "IsolationForestAnomalyDetector",
+    "IsolationForestModelEvaluator",
     "IsolationForestTrainer",
     "MachineModelRegistry",
     "MlArtifactError",
+    "ModelEvaluationError",
+    "ModelEvaluationReport",
 ]

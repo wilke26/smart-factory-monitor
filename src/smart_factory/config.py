@@ -101,6 +101,10 @@ class MlSettings:
     training_limit: int
     signature_public_key_path: str | None = None
     signing_private_key_path: str | None = field(default=None, repr=False)
+    evaluation_minimum_samples: int = 30
+    evaluation_limit: int = 1_000
+    maximum_evaluation_anomaly_rate: float = 0.15
+    maximum_feature_psi: float = 0.25
 
     @classmethod
     def from_env(cls) -> "MlSettings":
@@ -108,6 +112,12 @@ class MlSettings:
         training_limit = _required_range("ML_TRAINING_LIMIT", "10000", 20, 1_000_000)
         if training_limit < minimum_samples:
             raise ValueError("ML_TRAINING_LIMIT must not be below ML_MINIMUM_TRAINING_SAMPLES")
+        evaluation_minimum_samples = _required_range(
+            "ML_EVALUATION_MINIMUM_SAMPLES", "30", 20, 100_000
+        )
+        evaluation_limit = _required_range("ML_EVALUATION_LIMIT", "1000", 20, 1_000_000)
+        if evaluation_limit < evaluation_minimum_samples:
+            raise ValueError("ML_EVALUATION_LIMIT must not be below ML_EVALUATION_MINIMUM_SAMPLES")
         model_directory = os.getenv("ML_MODEL_DIRECTORY", "/models").strip()
         if not model_directory:
             raise ValueError("ML_MODEL_DIRECTORY must not be empty")
@@ -146,6 +156,12 @@ class MlSettings:
             training_limit=training_limit,
             signature_public_key_path=signature_public_key_path,
             signing_private_key_path=signing_private_key_path,
+            evaluation_minimum_samples=evaluation_minimum_samples,
+            evaluation_limit=evaluation_limit,
+            maximum_evaluation_anomaly_rate=_required_float_range(
+                "ML_MAX_EVALUATION_ANOMALY_RATE", "0.15", 0.0, 1.0
+            ),
+            maximum_feature_psi=_required_float_range("ML_MAX_FEATURE_PSI", "0.25", 0.0, 10.0),
         )
 
 

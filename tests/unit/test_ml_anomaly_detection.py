@@ -13,6 +13,7 @@ from smart_factory.infrastructure.ml.artifact_signing import (
 )
 from smart_factory.infrastructure.ml.isolation_forest import (
     IsolationForestAnomalyDetector,
+    IsolationForestModelEvaluator,
     IsolationForestTrainer,
     MlArtifactError,
 )
@@ -60,6 +61,7 @@ def test_trains_loads_and_detects_multivariate_outlier(
 
     assert artifact.training_samples == 500
     assert artifact.machine_id == "press-01"
+    assert artifact.training_window_end_datetime == readings[-1].timestamp
     assert model_path.exists()
     assert artifact_signature_path(model_path).is_file()
     assert len(findings) == 1
@@ -198,3 +200,125 @@ def test_rejects_tampering_before_joblib_deserialization(
         )
 
     load.assert_not_called()
+
+
+def test_offline_evaluation_accepts_a_stable_post_training_distribution(
+    tmp_path: Path,
+    artifact_signer: ArtifactSigner,
+) -> None:
+    readings = training_readings()
+    artifact = IsolationForestTrainer(contamination=0.01, signer=artifact_signer).train(
+        readings,
+        tmp_path / "model.joblib",
+    )
+    evaluation_readings = [
+        reading.model_copy(update={"timestamp": reading.timestamp + timedelta(days=1)})
+        for reading in readings
+    ]
+
+    report = IsolationForestModelEvaluator(
+        artifact,
+        minimum_samples=100,
+        maximum_anomaly_rate=0.1,
+        maximum_feature_psi=0.1,
+    ).evaluate(evaluation_readings)
+
+    assert report.passed is True
+    assert report.failed_gates == ()
+    assert report.sample_count == 500
+    assert report.anomaly_rate <= 0.1
+    assert report.maximum_feature_psi == pytest.approx(0.0)
+
+
+def test_offline_evaluation_rejects_distribution_drift(
+    tmp_path: Path,
+    artifact_signer: ArtifactSigner,
+) -> None:
+    readings = training_readings()
+    artifact = IsolationForestTrainer(contamination=0.01, signer=artifact_signer).train(
+        readings,
+        tmp_path / "model.joblib",
+    )
+    shifted = [
+        reading.model_copy(
+            update={
+                "timestamp": reading.timestamp + timedelta(days=1),
+                "temperature_c": 120.0,
+                "vibration_mm_s": 12.0,
+                "power_kw": 45.0,
+                "production_rate": 10,
+            }
+        )
+        for reading in readings[:100]
+    ]
+
+    report = IsolationForestModelEvaluator(
+        artifact,
+        minimum_samples=100,
+        maximum_anomaly_rate=0.1,
+        maximum_feature_psi=0.25,
+    ).evaluate(shifted)
+
+    assert report.passed is False
+    assert "maximum_anomaly_rate" in report.failed_gates
+    assert "maximum_feature_psi" in report.failed_gates
+
+
+def test_offline_evaluation_rejects_an_insufficient_window(
+    tmp_path: Path,
+    artifact_signer: ArtifactSigner,
+) -> None:
+    artifact = IsolationForestTrainer(contamination=0.01, signer=artifact_signer).train(
+        training_readings(),
+        tmp_path / "model.joblib",
+    )
+
+    report = IsolationForestModelEvaluator(
+        artifact,
+        minimum_samples=30,
+        maximum_anomaly_rate=1.0,
+        maximum_feature_psi=10.0,
+    ).evaluate(training_readings(29))
+
+    assert report.passed is False
+    assert report.failed_gates == ("minimum_samples",)
+
+
+def test_offline_evaluation_detects_drift_from_a_constant_training_feature(
+    tmp_path: Path,
+    artifact_signer: ArtifactSigner,
+) -> None:
+    readings = [
+        reading.model_copy(
+            update={
+                "temperature_c": 68.0,
+                "vibration_mm_s": 2.5,
+                "power_kw": 17.0,
+                "production_rate": 44,
+            }
+        )
+        for reading in training_readings(100)
+    ]
+    artifact = IsolationForestTrainer(contamination=0.01, signer=artifact_signer).train(
+        readings,
+        tmp_path / "model.joblib",
+    )
+    shifted = [
+        reading.model_copy(
+            update={
+                "timestamp": reading.timestamp + timedelta(days=1),
+                "temperature_c": 69.0,
+            }
+        )
+        for reading in readings
+    ]
+
+    report = IsolationForestModelEvaluator(
+        artifact,
+        minimum_samples=100,
+        maximum_anomaly_rate=1.0,
+        maximum_feature_psi=0.25,
+    ).evaluate(shifted)
+
+    assert report.passed is False
+    assert "maximum_feature_psi" in report.failed_gates

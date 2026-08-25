@@ -1,23 +1,24 @@
-# Architecture v0.9.0
+# Architecture v0.10.0
 
 ## Scope
 
-Version 0.9 retains accurate runtime readiness and adds integrity and least-privilege
-controls at three existing boundaries. Model artifacts are signed offline and verified
-before deserialization. The bundled broker authenticates distinct clients and applies
-topic ACLs. Kubernetes begins with default-deny workload network policy and opens only the
-documented ports. Managed MQTT, PostgreSQL/TimescaleDB, PKI, key rotation, and secret
-lifecycle remain deployment-owned dependencies.
+Version 0.10 retains the v0.9 integrity and least-privilege boundaries and adds an
+independent model-quality gate. Signed artifacts carry per-feature training reference
+distributions. The evaluator verifies those artifacts, reads only post-training telemetry,
+and produces a pass/fail result without changing the online registry.
 
 ```text
-Offline path                         Online path
+Offline paths                                      Online path
 telemetry_readings                   MQTT → validation → application service
         │                                                │
         ▼                                                ▼
-model-trainer → sign → registry      CompositeAnomalyDetector
- private key       artifact + sig     ├── rules (always)
-                         │            └── MachineModelRegistry (opt-in)
- public key ── verify ───┘                 └── Isolation Forest by machine
+model-trainer → reference + sign → registry        CompositeAnomalyDetector
+ private key              artifact + sig            ├── rules (always)
+                                  │                 └── MachineModelRegistry (opt-in)
+ public key ── verify ─────────────┤                      └── Isolation Forest by machine
+                                  ▼
+                    model-evaluator ← post-training telemetry
+                    sample/anomaly/PSI quality gates
                                                        │
                                                        ▼ one transaction
                                       telemetry_readings + anomaly_findings
@@ -29,9 +30,11 @@ model-trainer → sign → registry      CompositeAnomalyDetector
 - `application` owns the technology-neutral `AnomalyDetector` port, detector composition,
   processing orchestration, and persistence ports.
 - `infrastructure.ml` owns scikit-learn training, artifact signing and verification,
-  registry validation, and machine-aware inference dispatch.
+  reference distributions, offline evaluation, registry validation, and machine-aware
+  inference dispatch.
 - `infrastructure.database` supplies both atomic persistence and bounded historical reads.
-- `consumer_main` and `train_model_main` are separate composition roots.
+- `consumer_main`, `train_model_main`, and `evaluate_model_main` are separate composition
+  roots.
 
 The real-time application service sees only the detector protocol. It neither imports
 scikit-learn nor decides whether ML is enabled.
@@ -54,6 +57,15 @@ boundaries even though the model volume itself no longer grants authority to des
 Missing, unreadable, and incompatible artifacts are normalized to `MlArtifactError`.
 That permanent startup/configuration error is deliberately outside the MQTT/database
 retry policy, so an enabled consumer fails fast with an actionable cause.
+
+Artifact format v2 embeds decile-based reference proportions for the exact four-feature
+contract. Offline evaluation uses the same authenticated artifact and a bounded database
+query constrained to `recorded_at > training_window_end`, preventing any training row from
+being reused as evaluation evidence. It computes model
+anomaly rate and PSI against the artifact's fixed bins. Minimum sample count, maximum
+anomaly rate, and maximum feature PSI are independently configurable; any failed gate
+makes the command fail after all configured machines have been reported. Evaluation does
+not mutate or promote the registry.
 
 ## Delivery and persistence semantics
 
@@ -87,9 +99,10 @@ as a healthy database interaction.
 ## Operational boundaries
 
 Isolation Forest detects statistical rarity, not equipment failure and not causality.
-Training data quality, hold-out evaluation, drift, model approval, key rotation, alerts,
-backups, retention/compression, managed-service infrastructure, and automatic deployment
-remain explicit future work.
+Handling of late readings at or before the training boundary, labelled outcome evaluation,
+model approval, durable evaluation history, key rotation, alerts, backups, retention/compression, managed-service
+infrastructure, and automatic deployment remain explicit future work. PSI indicates
+distribution change, not failure causality or predictive accuracy.
 
 ## Deployment boundary
 

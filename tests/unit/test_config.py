@@ -212,6 +212,10 @@ def test_ml_defaults_to_explicitly_disabled(monkeypatch: pytest.MonkeyPatch) -> 
         "ML_CONTAMINATION",
         "ML_MINIMUM_TRAINING_SAMPLES",
         "ML_TRAINING_LIMIT",
+        "ML_EVALUATION_MINIMUM_SAMPLES",
+        "ML_EVALUATION_LIMIT",
+        "ML_MAX_EVALUATION_ANOMALY_RATE",
+        "ML_MAX_FEATURE_PSI",
         "ML_SIGNATURE_PUBLIC_KEY_PATH",
         "ML_SIGNING_PRIVATE_KEY_PATH",
     ):
@@ -225,6 +229,10 @@ def test_ml_defaults_to_explicitly_disabled(monkeypatch: pytest.MonkeyPatch) -> 
     assert settings.machine_ids == ("press-01",)
     assert settings.minimum_training_samples == 100
     assert settings.training_limit == 10_000
+    assert settings.evaluation_minimum_samples == 30
+    assert settings.evaluation_limit == 1_000
+    assert settings.maximum_evaluation_anomaly_rate == 0.15
+    assert settings.maximum_feature_psi == 0.25
     assert settings.signature_public_key_path is None
     assert settings.signing_private_key_path is None
 
@@ -270,6 +278,28 @@ def test_rejects_training_limit_below_minimum(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("ML_TRAINING_LIMIT", "100")
 
     with pytest.raises(ValueError, match="must not be below"):
+        MlSettings.from_env()
+
+
+def test_reads_model_evaluation_gates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ML_EVALUATION_MINIMUM_SAMPLES", "40")
+    monkeypatch.setenv("ML_EVALUATION_LIMIT", "500")
+    monkeypatch.setenv("ML_MAX_EVALUATION_ANOMALY_RATE", "0.08")
+    monkeypatch.setenv("ML_MAX_FEATURE_PSI", "0.2")
+
+    settings = MlSettings.from_env()
+
+    assert settings.evaluation_minimum_samples == 40
+    assert settings.evaluation_limit == 500
+    assert settings.maximum_evaluation_anomaly_rate == 0.08
+    assert settings.maximum_feature_psi == 0.2
+
+
+def test_rejects_evaluation_limit_below_minimum(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ML_EVALUATION_MINIMUM_SAMPLES", "50")
+    monkeypatch.setenv("ML_EVALUATION_LIMIT", "40")
+
+    with pytest.raises(ValueError, match="ML_EVALUATION_LIMIT must not be below"):
         MlSettings.from_env()
 
 

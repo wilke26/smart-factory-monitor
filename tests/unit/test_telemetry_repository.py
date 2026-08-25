@@ -11,6 +11,7 @@ from smart_factory.infrastructure.database.telemetry_repository import (
     INSERT_TELEMETRY,
     SELECT_RECENT_TELEMETRY,
     SELECT_TELEMETRY_BY_IDENTITY,
+    SELECT_TELEMETRY_SINCE,
     PsycopgTelemetryRepository,
 )
 
@@ -195,4 +196,30 @@ def test_loads_recent_readings_for_training() -> None:
     result = repository.load_recent_readings("press-01", 500)
 
     cursor.execute.assert_called_once_with(SELECT_RECENT_TELEMETRY, ("press-01", 500))
+    assert result == [measurement]
+
+
+def test_loads_only_post_training_readings_for_evaluation() -> None:
+    repository, pool = repository_with_pool()
+    measurement = reading()
+    connection = pool.connection.return_value.__enter__.return_value
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = [
+        (
+            measurement.machine_id,
+            measurement.timestamp,
+            measurement.temperature_c,
+            measurement.vibration_mm_s,
+            measurement.power_kw,
+            measurement.production_rate,
+        )
+    ]
+    trained_at = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+
+    result = repository.load_readings_since("press-01", trained_at, 1_000)
+
+    cursor.execute.assert_called_once_with(
+        SELECT_TELEMETRY_SINCE,
+        ("press-01", trained_at, 1_000),
+    )
     assert result == [measurement]
