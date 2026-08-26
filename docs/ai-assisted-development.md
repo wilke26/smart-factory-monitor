@@ -66,3 +66,8 @@ For v0.11.1, review findings were traced to their reachable runtime paths before
 were accepted. Tests now cover lease loss during both delivery completion and retry
 rescheduling, continued processing of later batch entries, and actual redirect rejection.
 The documented development-only HTTP path remains intentional and unchanged.
+
+For v0.12, automated checks cover strict evaluation-evidence invariants, complete JSONB
+mapping, bounded database-pool lifecycle, fail-closed persistence, successful and failed
+gate history, migration constraints, and a Compose/TimescaleDB assertion that both
+machine-specific CI evaluations were stored with all four feature PSI values.

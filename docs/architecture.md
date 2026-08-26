@@ -1,4 +1,4 @@
-# Architecture v0.11.1
+# Architecture v0.12.0
 
 ## Scope
 
@@ -7,6 +7,8 @@ external HTTP inside MQTT processing. Eligible anomaly evidence is written to a
 transactional outbox, then a separate dispatcher leases and delivers it.
 Version 0.11.1 makes a lost lease an explicit non-fatal concurrency outcome so a stale
 worker cannot stop delivery of the remaining claimed batch.
+Version 0.12 adds an outbound model-evaluation store so release evidence survives the
+one-shot evaluator process without coupling gate calculation to PostgreSQL.
 
 ```text
 Offline paths                                      Online path
@@ -20,6 +22,8 @@ model-trainer → reference + sign → registry        CompositeAnomalyDetector
                                   ▼
                     model-evaluator ← post-training telemetry
                     sample/anomaly/PSI quality gates
+                             │
+                             └── immutable model_evaluation_runs evidence
                                                        │
                                                        ▼ one transaction
                                       telemetry_readings + anomaly_findings
@@ -38,7 +42,8 @@ model-trainer → reference + sign → registry        CompositeAnomalyDetector
   reference distributions, offline evaluation, registry validation, and machine-aware
   inference dispatch.
 - `infrastructure.database` supplies atomic telemetry/outbox persistence, leased alert
-  claims, delivery-state transitions, and bounded historical reads.
+  claims, delivery-state transitions, bounded historical reads, and immutable model
+  evaluation evidence.
 - `infrastructure.alerts` owns verified webhook transport.
 - `consumer_main`, `alert_dispatcher_main`, `train_model_main`, and `evaluate_model_main`
   are separate composition roots.
@@ -122,7 +127,7 @@ as a healthy database interaction.
 
 Isolation Forest detects statistical rarity, not equipment failure and not causality.
 Handling of late readings at or before the training boundary, labelled outcome evaluation,
-model approval, durable evaluation history, key rotation, destination-specific alert
+model approval, key rotation, destination-specific alert
 escalation policy, backups, retention/compression, managed-service
 infrastructure, and automatic deployment remain explicit future work. PSI indicates
 distribution change, not failure causality or predictive accuracy.

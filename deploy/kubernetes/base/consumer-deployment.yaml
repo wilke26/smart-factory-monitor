@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: consumer
-          image: smart-factory-monitor:0.11.1
+          image: smart-factory-monitor:0.12.0
           imagePullPolicy: IfNotPresent
           command: ["smart-factory-consumer"]
           envFrom:

@@ -66,21 +66,30 @@ For each machine the evaluator verifies the signature, reads at most
 `ML_EVALUATION_LIMIT` rows with `recorded_at` later than the artifact's recorded training
 window end,
 and logs `evaluation_samples`, `anomaly_rate`, every feature PSI, the largest PSI, and the
-failed gates. The command succeeds only when every configured machine has at least
+failed gates. Before reporting the machine result it persists the same immutable evidence
+to `model_evaluation_runs`. The command succeeds only when every configured machine has at least
 `ML_EVALUATION_MINIMUM_SAMPLES`, stays at or below
 `ML_MAX_EVALUATION_ANOMALY_RATE`, and stays at or below `ML_MAX_FEATURE_PSI` for all
 features.
 
-This gives deployment automation a deterministic quality gate but deliberately does not
-promote the model. Archive the structured result outside the container if durable evidence
-is required. Late readings at or before the stored training boundary are deliberately not
-treated as post-training evidence. Existing format-v1 artifacts are incompatible and must
-be retrained.
+This gives deployment automation a deterministic quality gate and durable audit history,
+but deliberately does not promote the model. Evidence persistence fails closed: a result
+that cannot be stored cannot pass the command. Late readings at or before the stored
+training boundary are deliberately not treated as post-training evidence. Existing
+format-v1 artifacts are incompatible and must be retrained.
+
+```sql
+SELECT evaluated_at, model_id, sample_count, anomaly_rate,
+       maximum_feature_psi, passed, failed_gates
+FROM model_evaluation_runs
+WHERE machine_id = 'press-01'
+ORDER BY evaluated_at DESC;
+```
 
 ## Remaining controls
 
 The local registry is not a production model platform. Signatures establish integrity
 and provenance under the configured key. The offline gates provide post-training
 distribution evidence but not labelled accuracy or approval. Immutable version storage,
-rollback, controlled promotion, durable evaluation history, key rotation, and registry
+rollback, controlled promotion, key rotation, and registry
 distribution remain explicit future work.

@@ -83,6 +83,10 @@ jobs:
             -U smart_factory -d smart_factory -v ON_ERROR_STOP=1 \
             -c "INSERT INTO telemetry_readings (machine_id, recorded_at, temperature_c, vibration_mm_s, power_kw, production_rate) SELECT machine_id, NOW() - number * INTERVAL '1 millisecond', 68 + (number % 5) * 0.1, 2.5 + (number % 7) * 0.02, 17 + (number % 3) * 0.1, 44 + (number % 2) FROM (VALUES ('press-01'), ('press-02')) AS machines(machine_id) CROSS JOIN generate_series(1, 120) AS number;"
           ML_MACHINE_IDS=press-01,press-02 docker compose --profile tools run --rm model-evaluator
+          evaluation_count=$(docker compose exec -T timescaledb psql \
+            -U smart_factory -d smart_factory -At \
+            -c "SELECT COUNT(*) FROM model_evaluation_runs WHERE passed AND (SELECT COUNT(*) FROM jsonb_object_keys(feature_psi)) = 4")
+          test "$evaluation_count" = "2"
           docker compose run --rm --no-deps consumer python -c \
             "from pathlib import Path; from smart_factory.infrastructure.ml.registry import MachineModelRegistry; MachineModelRegistry.load(Path('/models'), public_key_path=Path('/run/ml-signing/public/public.pem'))"
           test "$(docker compose exec -T mosquitto sh -c 'find /mosquitto/config-generated -name "*.tmp" -print')" = ""

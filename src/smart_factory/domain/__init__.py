@@ -2,12 +2,14 @@
 
 from smart_factory.domain.alert import AnomalyAlert
 from smart_factory.domain.anomaly import AnomalyFinding, AnomalySeverity
+from smart_factory.domain.model_evaluation import ModelEvaluationEvidence
 from smart_factory.domain.telemetry import Telemetry, TelemetryReading
 
 __all__ = [
     "AnomalyAlert",
     "AnomalyFinding",
     "AnomalySeverity",
+    "ModelEvaluationEvidence",
     "Telemetry",
     "TelemetryReading",
 ]

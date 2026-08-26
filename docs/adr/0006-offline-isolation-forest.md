@@ -26,6 +26,6 @@ Keep ML disabled until an operator trains and explicitly enables a compatible ar
 - Artifact incompatibility stops enabled ML rather than silently degrading.
 - joblib/pickle requires a trusted artifact supply chain.
 - v0.7 adds a local per-machine registry, v0.9 adds pre-deserialization Ed25519
-  verification, and v0.10 adds post-training anomaly-rate and PSI gates. Promotion,
-  labelled outcome evaluation, key rotation, and durable evaluation evidence remain
-  required before production use.
+  verification, v0.10 adds post-training anomaly-rate and PSI gates, and v0.12 stores
+  their immutable evidence. Promotion, labelled outcome evaluation, and key rotation
+  remain required before production use.

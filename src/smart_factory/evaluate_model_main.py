@@ -4,6 +4,10 @@ import logging
 from pathlib import Path
 
 from smart_factory.config import MlSettings, Settings
+from smart_factory.domain.model_evaluation import ModelEvaluationEvidence
+from smart_factory.infrastructure.database.model_evaluation_store import (
+    PsycopgModelEvaluationStore,
+)
 from smart_factory.infrastructure.database.telemetry_repository import PsycopgTelemetryRepository
 from smart_factory.infrastructure.ml.artifact_signing import ArtifactVerifier
 from smart_factory.infrastructure.ml.isolation_forest import (
@@ -25,9 +29,15 @@ def run(settings: Settings, ml_settings: MlSettings) -> None:
         min_size=settings.database_pool_min_size,
         max_size=settings.database_pool_max_size,
     )
+    evaluation_store = PsycopgModelEvaluationStore(
+        settings.database_url,
+        min_size=settings.database_pool_min_size,
+        max_size=settings.database_pool_max_size,
+    )
     failed_machines: list[str] = []
     try:
         repository.open(timeout=settings.database_connect_timeout_seconds)
+        evaluation_store.open(timeout=settings.database_connect_timeout_seconds)
         for machine_id in ml_settings.machine_ids:
             detector = IsolationForestAnomalyDetector.load(
                 Path(ml_settings.model_directory) / f"{machine_id}.joblib",
@@ -46,9 +56,22 @@ def run(settings: Settings, ml_settings: MlSettings) -> None:
                 maximum_anomaly_rate=ml_settings.maximum_evaluation_anomaly_rate,
                 maximum_feature_psi=ml_settings.maximum_feature_psi,
             ).evaluate(readings)
+            evidence = ModelEvaluationEvidence(
+                model_id=report.model_id,
+                machine_id=report.machine_id,
+                training_window_end=artifact.training_window_end_datetime,
+                sample_count=report.sample_count,
+                anomaly_rate=report.anomaly_rate,
+                feature_psi=report.feature_psi,
+                maximum_feature_psi=report.maximum_feature_psi,
+                passed=report.passed,
+                failed_gates=report.failed_gates,
+            )
+            evaluation_store.save(evidence)
             LOGGER.info(
                 "ml_model_evaluated",
                 extra={
+                    "evaluation_id": str(evidence.evaluation_id),
                     "model_id": report.model_id,
                     "machine_id": report.machine_id,
                     "evaluation_samples": report.sample_count,
@@ -62,6 +85,7 @@ def run(settings: Settings, ml_settings: MlSettings) -> None:
             if not report.passed:
                 failed_machines.append(machine_id)
     finally:
+        evaluation_store.close()
         repository.close()
     if failed_machines:
         raise ModelEvaluationError("ML evaluation gates failed for: " + ", ".join(failed_machines))

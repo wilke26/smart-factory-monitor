@@ -61,3 +61,12 @@ In the v0.7 registry the trusted artifact filename is `<machine_id>.joblib` and 
 the embedded artifact identity.
 Artifact format v2 additionally binds deterministic histogram edges and training
 proportions for these exact features. They are evaluation metadata, not telemetry fields.
+
+## Model-evaluation evidence contract
+
+Each evaluator run stores one immutable `model_evaluation_runs` row per machine. It
+contains `evaluation_id`, `evaluated_at`, `model_id`, `machine_id`,
+`training_window_end`, `sample_count`, `anomaly_rate`, a JSON object of per-feature PSI,
+`maximum_feature_psi`, `passed`, and the stable `failed_gates` array. Timestamps require a
+UTC offset, probabilities are finite and bounded, feature names are unique, the maximum
+must match the feature values, and `passed` is true exactly when `failed_gates` is empty.

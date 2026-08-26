@@ -5,6 +5,7 @@ from unittest.mock import Mock, call, patch
 import pytest
 
 from smart_factory.config import MlSettings
+from smart_factory.domain.model_evaluation import ModelEvaluationEvidence
 from smart_factory.evaluate_model_main import run
 from smart_factory.infrastructure.ml.isolation_forest import ModelEvaluationError
 
@@ -36,11 +37,13 @@ def runtime_settings() -> Mock:
 
 @patch("smart_factory.evaluate_model_main.IsolationForestModelEvaluator")
 @patch("smart_factory.evaluate_model_main.IsolationForestAnomalyDetector.load")
+@patch("smart_factory.evaluate_model_main.PsycopgModelEvaluationStore")
 @patch("smart_factory.evaluate_model_main.PsycopgTelemetryRepository")
 @patch("smart_factory.evaluate_model_main.ArtifactVerifier.from_public_key_file")
 def test_evaluates_each_machine_from_post_training_history(
     verifier_from_file: Mock,
     repository_type: Mock,
+    evaluation_store_type: Mock,
     detector_load: Mock,
     evaluator_type: Mock,
 ) -> None:
@@ -102,15 +105,26 @@ def test_evaluates_each_machine_from_post_training_history(
         call("press-02", training_window_end, 500),
     ]
     repository_type.return_value.close.assert_called_once()
+    evaluation_store_type.return_value.open.assert_called_once_with(timeout=10)
+    evaluation_store_type.return_value.close.assert_called_once()
+    saved = [call.args[0] for call in evaluation_store_type.return_value.save.call_args_list]
+    assert len(saved) == 2
+    assert all(isinstance(record, ModelEvaluationEvidence) for record in saved)
+    assert [(record.machine_id, record.passed) for record in saved] == [
+        ("press-01", True),
+        ("press-02", True),
+    ]
 
 
 @patch("smart_factory.evaluate_model_main.IsolationForestModelEvaluator")
 @patch("smart_factory.evaluate_model_main.IsolationForestAnomalyDetector.load")
+@patch("smart_factory.evaluate_model_main.PsycopgModelEvaluationStore")
 @patch("smart_factory.evaluate_model_main.PsycopgTelemetryRepository")
 @patch("smart_factory.evaluate_model_main.ArtifactVerifier.from_public_key_file")
 def test_reports_all_evaluation_gate_failures_after_closing_repository(
     verifier_from_file: Mock,
     repository_type: Mock,
+    evaluation_store_type: Mock,
     detector_load: Mock,
     evaluator_type: Mock,
 ) -> None:
@@ -131,6 +145,44 @@ def test_reports_all_evaluation_gate_failures_after_closing_repository(
         run(runtime_settings(), ml_settings())
 
     repository_type.return_value.close.assert_called_once()
+    evaluation_store_type.return_value.close.assert_called_once()
+    assert evaluation_store_type.return_value.save.call_count == 2
+
+
+@patch("smart_factory.evaluate_model_main.IsolationForestModelEvaluator")
+@patch("smart_factory.evaluate_model_main.IsolationForestAnomalyDetector.load")
+@patch("smart_factory.evaluate_model_main.PsycopgModelEvaluationStore")
+@patch("smart_factory.evaluate_model_main.PsycopgTelemetryRepository")
+@patch("smart_factory.evaluate_model_main.ArtifactVerifier.from_public_key_file")
+def test_fails_closed_when_evaluation_evidence_cannot_be_persisted(
+    verifier_from_file: Mock,
+    repository_type: Mock,
+    evaluation_store_type: Mock,
+    detector_load: Mock,
+    evaluator_type: Mock,
+) -> None:
+    del verifier_from_file
+    training_window_end = datetime(2026, 8, 25, tzinfo=UTC)
+    detector_load.return_value = Mock(
+        artifact=Mock(training_window_end_datetime=training_window_end)
+    )
+    evaluator_type.return_value.evaluate.return_value = Mock(
+        model_id="model",
+        machine_id="press-01",
+        sample_count=50,
+        anomaly_rate=0.02,
+        feature_psi=(("temperature_c", 0.01),),
+        maximum_feature_psi=0.01,
+        passed=True,
+        failed_gates=(),
+    )
+    evaluation_store_type.return_value.save.side_effect = RuntimeError("database unavailable")
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        run(runtime_settings(), ml_settings())
+
+    repository_type.return_value.close.assert_called_once()
+    evaluation_store_type.return_value.close.assert_called_once()
 
 
 def test_requires_public_verification_key_before_database_access() -> None:

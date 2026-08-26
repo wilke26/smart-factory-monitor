@@ -18,6 +18,7 @@ import sklearn
 from sklearn.ensemble import IsolationForest
 
 from smart_factory.domain.anomaly import AnomalyFinding, AnomalySeverity
+from smart_factory.domain.model_evaluation import FailedGate
 from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.ml.artifact_signing import (
     ArtifactSigner,
@@ -139,7 +140,7 @@ class ModelEvaluationReport:
     anomaly_rate: float
     feature_psi: tuple[tuple[str, float], ...]
     passed: bool
-    failed_gates: tuple[str, ...]
+    failed_gates: tuple[FailedGate, ...]
 
     @property
     def maximum_feature_psi(self) -> float:
@@ -393,7 +394,7 @@ class IsolationForestModelEvaluator:
                 self._artifact.reference_distributions
             )
         )
-        failed_gates: list[str] = []
+        failed_gates: list[FailedGate] = []
         if len(readings) < self._minimum_samples:
             failed_gates.append("minimum_samples")
         if anomaly_rate > self._maximum_anomaly_rate:

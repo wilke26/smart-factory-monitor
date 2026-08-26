@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.11.1** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.12.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -21,7 +21,9 @@ anomaly rate, and per-feature Population Stability Index (PSI). v0.11 adds durab
 severity-filtered webhook alert routing through a transactional outbox and a separately
 deployable, lease-based dispatcher. v0.11.1 treats a concurrently replaced or expired
 dispatcher lease as an expected delivery outcome, logs it without sensitive error text,
-and continues processing the remaining batch.
+and continues processing the remaining batch. v0.12 persists every signed post-training
+model-evaluation result as immutable, queryable audit evidence before reporting success or
+gate failure.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion yet.
 
@@ -222,17 +224,25 @@ Artifact format v2 also records decile-based training proportions for every feat
 The evaluator verifies the signed artifact, loads only readings with timestamps after the
 recorded `training_window_end`, and fails unless the bounded window meets all configured gates: minimum
 sample count, maximum predicted anomaly rate, and maximum per-feature PSI. Its structured
-`ml_model_evaluated` log contains the complete result for each machine. A successful
-evaluation is evidence for an external promotion decision; the command never activates,
-copies, or replaces a deployed model.
+`ml_model_evaluated` log contains the complete result for each machine. The same result is
+stored in `model_evaluation_runs`, including its evaluation UUID, artifact identity,
+training boundary, sample count, anomaly rate, per-feature PSI, decision, and failed gates.
+A successful evaluation is evidence for an external promotion decision; the command never
+activates, copies, or replaces a deployed model.
+
+```sql
+SELECT evaluated_at, machine_id, model_id, passed, failed_gates
+FROM model_evaluation_runs
+ORDER BY evaluated_at DESC;
+```
 
 The artifact still uses joblib/pickle semantics. Signature verification prevents an
 untrusted or corrupted file from reaching the unsafe deserializer, provided the public
 verification key is distributed through a trusted channel and the signing private key
 remains restricted to the trainer. Signing proves provenance and integrity; evaluation
 adds quality evidence, but neither is an approval workflow. Immutable versioned
-promotion, rollback, and durable evaluation history remain
-production-hardening work. v0.9 format-v1 artifacts must be retrained for v0.10.
+promotion and rollback remain production-hardening work. Durable evaluation evidence is
+an audit trail, not an approval. v0.9 format-v1 artifacts must be retrained for v0.10.
 
 ## Telemetry contract
 
@@ -364,7 +374,7 @@ kubectl kustomize deploy/kubernetes/overlays/azure >/tmp/smart-factory-azure.yam
 Tests cover the contract, configuration, application service, observability, MQTT callbacks,
 valid/invalid ingestion pipelines, rule boundaries, model training/inference, pre-load
 signature verification, post-training anomaly/PSI gates, atomic idempotent persistence,
-transactional alert creation, leased retry delivery, real webhook requests, and
+durable evaluation evidence, transactional alert creation, leased retry delivery, real webhook requests, and
 property-based JSON round trips. CI checks Python 3.12 and 3.13, audits dependencies,
 renders Kubernetes policy,
 scans the built consumer image, exercises a denied broker topic, trains, evaluates, and
@@ -397,12 +407,13 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0011: least-privilege runtime and supply-chain baseline](docs/adr/0011-least-privilege-runtime-and-supply-chain.md)
 - [ADR 0012: post-training model evaluation gates](docs/adr/0012-post-training-model-evaluation-gates.md)
 - [ADR 0013: transactional alert outbox](docs/adr/0013-transactional-alert-outbox.md)
+- [ADR 0014: durable model-evaluation evidence](docs/adr/0014-durable-model-evaluation-evidence.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
 Future versions can add retention/compression policies, immutable
-image/model promotion, durable evaluation history, backup/restore tests, and
+image/model promotion, backup/restore tests, and
 infrastructure-as-code for managed dependencies. Local Compose remains a development
 environment rather than a production deployment.
