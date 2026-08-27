@@ -157,7 +157,8 @@ configuration remain deployment work.
 
 After privileged operations, verify and sign the current chain head with a dedicated
 attestation key. On a Linux host, provision the bind-mounted output directory for the
-container's non-root UID first (`sudo install -d -o 10001 -g 10001 -m 0750 audit-checkpoints`):
+container's non-root UID and the invoking user's group first
+(`sudo install -d -o 10001 -g "$(id -g)" -m 0770 audit-checkpoints`):
 
 ```bash
 AUDIT_CHAIN_ID=smart-factory-local AUDIT_CHECKPOINT_NAME=manual-2026-08-27.json \

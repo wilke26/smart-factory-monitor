@@ -93,7 +93,7 @@ jobs:
             -U smart_factory -d smart_factory -At \
             -c "SELECT COUNT(*) FROM operator_audit_events WHERE actor = 'github-actions' AND correlation_id = '11111111-1111-1111-1111-111111111111' AND outcome IN ('started', 'succeeded')")
           test "$audit_event_count" = "2"
-          sudo install -d -o 10001 -g 10001 -m 0750 audit-checkpoints
+          sudo install -d -o 10001 -g "$(id -g)" -m 0770 audit-checkpoints
           AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_CHECKPOINT_NAME=ci-checkpoint.json docker compose --profile tools run --rm audit-checkpoint-exporter
           AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_CHECKPOINT_NAME=ci-checkpoint.json docker compose --profile tools run --rm audit-checkpoint-verifier
           cp audit-checkpoints/ci-checkpoint.json audit-checkpoints/tampered-checkpoint.json
