@@ -153,10 +153,35 @@ operator or workload and restrict direct database ownership. External attestatio
 retention, archival, query authorization, and audit events for key rotation and security
 configuration remain deployment work.
 
+### Signed audit checkpoints
+
+After privileged operations, verify and sign the current chain head with a dedicated
+attestation key. On a Linux host, provision the bind-mounted output directory for the
+container's non-root UID first (`sudo install -d -o 10001 -g 10001 -m 0750 audit-checkpoints`):
+
+```bash
+AUDIT_CHAIN_ID=smart-factory-local AUDIT_CHECKPOINT_NAME=manual-2026-08-27.json \
+  docker compose --profile tools run --rm audit-checkpoint-exporter
+```
+
+The exporter refuses an invalid database chain and never replaces an existing checkpoint
+path. Verify the resulting self-contained envelope without PostgreSQL:
+
+```bash
+AUDIT_CHAIN_ID=smart-factory-local AUDIT_CHECKPOINT_NAME=manual-2026-08-27.json \
+  docker compose --profile tools run --rm --no-deps audit-checkpoint-verifier
+```
+
+Retain the JSON and trusted public key outside the database administrative boundary. A
+valid historical checkpoint proves the exact event count and head hash observed at its
+creation time; it does not prove that later events were retained or that checkpoints were
+created on schedule. Production policy must define checkpoint cadence, freshness alerts,
+immutable storage, retention, and attestation-key rotation.
+
 ## Remaining controls
 
 The local registry is not a production model platform. Signatures establish integrity
 and provenance under the configured key. The offline gates provide post-training
 distribution evidence but not labelled accuracy or human approval. Approval integration,
-generation retention, key rotation, registry distribution, external audit attestation,
+generation retention, key rotation, registry distribution, scheduled external checkpoint retention,
 and a defined retention and access policy remain explicit future work.

@@ -12,6 +12,7 @@ from smart_factory.domain.anomaly import AnomalySeverity
 from smart_factory.domain.operator_audit import OperatorAuditContext
 
 _MACHINE_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_AUDIT_CHAIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$")
 
 
 def _required_range(name: str, default: str, minimum: int, maximum: int) -> int:
@@ -285,6 +286,45 @@ class OperatorAuditSettings:
         except ValueError as error:
             raise ValueError("AUDIT_CORRELATION_ID must be a UUID") from error
         return cls(actor=actor, reason=reason, correlation_id=correlation_id)
+
+
+@dataclass(frozen=True, slots=True)
+class AuditCheckpointSettings:
+    """Key material and destination for portable audit-chain checkpoints."""
+
+    chain_id: str
+    checkpoint_path: str
+    public_key_path: str
+    private_key_path: str | None = field(default=None, repr=False)
+
+    @classmethod
+    def from_env(cls, *, require_private_key: bool) -> "AuditCheckpointSettings":
+        chain_id = os.getenv("AUDIT_CHAIN_ID", "").strip()
+        checkpoint_path = os.getenv("AUDIT_CHECKPOINT_PATH", "").strip()
+        public_key_path = os.getenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", "").strip()
+        private_key_path = _optional_text("AUDIT_ATTESTATION_PRIVATE_KEY_PATH")
+        if not chain_id:
+            raise ValueError("AUDIT_CHAIN_ID is required for audit checkpoints")
+        if not _AUDIT_CHAIN_ID_PATTERN.fullmatch(chain_id):
+            raise ValueError("AUDIT_CHAIN_ID contains unsupported characters")
+        if not checkpoint_path:
+            raise ValueError("AUDIT_CHECKPOINT_PATH is required for audit checkpoints")
+        if not public_key_path:
+            raise ValueError("AUDIT_ATTESTATION_PUBLIC_KEY_PATH is required")
+        if require_private_key and private_key_path is None:
+            raise ValueError("AUDIT_ATTESTATION_PRIVATE_KEY_PATH is required for export")
+        for name, path in (
+            ("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", public_key_path),
+            ("AUDIT_ATTESTATION_PRIVATE_KEY_PATH", private_key_path),
+        ):
+            if path is not None and (not Path(path).is_file() or not os.access(path, os.R_OK)):
+                raise ValueError(f"{name} must identify a readable file")
+        return cls(
+            chain_id=chain_id,
+            checkpoint_path=checkpoint_path,
+            public_key_path=public_key_path,
+            private_key_path=private_key_path,
+        )
 
 
 @dataclass(frozen=True, slots=True)

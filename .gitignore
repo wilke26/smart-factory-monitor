@@ -19,6 +19,7 @@ _to_delete/
 backups/
 docs/~$*
 docs/Smart_Factory_Monitor_Analysebericht*.docx
+audit-checkpoints/
 docker/mosquitto/data/*
 docker/mosquitto/log/*
 !docker/mosquitto/data/.gitkeep

@@ -64,7 +64,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.15.0 \
+  --image smart-factory-monitor:0.16.0 \
   --build-arg 'PROJECT_INSTALL=.[ml]' .
 
 az aks update \

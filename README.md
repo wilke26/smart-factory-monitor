@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.15.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.16.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -30,7 +30,8 @@ restores only into isolated targets and verifies the recovered signed registry.
 v0.14.1 restores TimescaleDB in its required restore mode and defers foreign-key
 validation until hypertable restoration is complete. v0.15 records model promotion and
 rollback as fail-closed, append-only operator events whose SHA-256 chain can be verified
-independently.
+independently. v0.16 signs verified chain-head checkpoints with a separate Ed25519
+attestation key so retained evidence can reveal even a complete database-side rewrite.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -274,6 +275,22 @@ binds the previous hash to the canonical event content. Verify the complete chai
 docker compose --profile tools run --rm audit-verifier
 ```
 
+Export a self-contained signed checkpoint and verify it without database access:
+
+```bash
+AUDIT_CHAIN_ID=smart-factory-local AUDIT_CHECKPOINT_NAME=manual-2026-08-27.json \
+  docker compose --profile tools run --rm audit-checkpoint-exporter
+AUDIT_CHAIN_ID=smart-factory-local AUDIT_CHECKPOINT_NAME=manual-2026-08-27.json \
+  docker compose --profile tools run --rm --no-deps audit-checkpoint-verifier
+```
+
+The checkpoint contains the verified event count and chain head, a deployment-specific
+chain ID, creation time, and the fingerprint of a separate attestation key. Its Ed25519
+signature is stored in the same immutable JSON envelope. Copy the file from
+`audit-checkpoints/` to storage controlled independently from the database. CI uploads
+its checkpoint as a workflow artifact and proves that modified checkpoint content no
+longer verifies.
+
 `AUDIT_ACTOR` is an asserted identity. Production automation must derive it from an
 authenticated workload or operator context rather than accepting arbitrary user input.
 
@@ -380,6 +397,10 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `AUDIT_ACTOR` | empty | Required trusted identity for promotion and rollback |
 | `AUDIT_REASON` | empty | Required reason or ticket for the privileged operation |
 | `AUDIT_CORRELATION_ID` | empty | Required operation correlation UUID |
+| `AUDIT_CHAIN_ID` | `smart-factory-local` in Compose | Deployment identity bound into checkpoints |
+| `AUDIT_CHECKPOINT_PATH` | `/audit-checkpoints/checkpoint.json` in Compose | Signed checkpoint artifact |
+| `AUDIT_ATTESTATION_PRIVATE_KEY_PATH` | empty | Export-only Ed25519 attestation key |
+| `AUDIT_ATTESTATION_PUBLIC_KEY_PATH` | empty | Independent checkpoint-verification key |
 | `ALERT_WEBHOOK_URL` | empty | Verified HTTPS destination; empty disables alert outbox creation |
 | `ALERT_WEBHOOK_ALLOW_INSECURE_HTTP` | `false` | Development-only opt-in for plain HTTP |
 | `ALERT_WEBHOOK_BEARER_TOKEN` | empty | Optional dispatcher-only bearer credential |
@@ -448,6 +469,7 @@ valid/invalid ingestion pipelines, rule boundaries, model training/inference, pr
 signature verification, post-training anomaly/PSI gates, atomic idempotent persistence,
 durable evaluation evidence, approval-gated atomic promotion, generation rollback,
 fail-closed hash-chained operator auditing,
+signed portable audit checkpoints and tamper rejection,
 transactional alert creation, leased retry delivery, real webhook requests, and
 property-based JSON round trips. CI also creates and checksum-verifies a database/model
 backup, restores it into isolated targets, compares persisted evidence, and loads the
@@ -486,6 +508,7 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0015: atomic model promotion and rollback](docs/adr/0015-atomic-model-promotion-and-rollback.md)
 - [ADR 0016: verifiable isolated recovery drills](docs/adr/0016-verifiable-isolated-recovery-drills.md)
 - [ADR 0017: hash-chained operator audit trail](docs/adr/0017-hash-chained-operator-audit-trail.md)
+- [ADR 0018: externally retained signed audit checkpoints](docs/adr/0018-signed-audit-checkpoints.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
@@ -494,5 +517,5 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 Future versions can add retention/compression policies, immutable image promotion,
 production backup scheduling and off-site retention, human model-approval integration,
 registry archival policy, key-rotation and configuration-change audit events, external
-audit attestation, and infrastructure-as-code for managed dependencies. Local Compose
+checkpoint scheduling and immutable retention, and infrastructure-as-code for managed dependencies. Local Compose
 remains a development environment rather than a production deployment.

@@ -42,9 +42,10 @@ process crashes or the terminal append fails after filesystem publication, the u
 - Concurrent command writers produce one deterministic chain order.
 - Accidental or ordinary application-role mutation is rejected and offline tampering is
   detectable by chain verification.
-- A database owner can still disable triggers and rewrite the complete chain; production
-  deployments therefore still require restricted ownership, external export or
-  attestation, access logging, retention, archival, and deletion policy.
+- A database owner can still disable triggers and rewrite the complete chain. v0.16 adds
+  signed external checkpoints to expose such a rewrite, while production still requires
+  restricted ownership, scheduled immutable retention, access logging, archival, and
+  deletion policy.
 - Key rotation and security-relevant configuration changes do not yet have composition
   roots and remain future audit event types.
 - Filesystem publication and audit completion are deliberately observable but not

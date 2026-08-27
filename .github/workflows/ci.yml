@@ -60,7 +60,7 @@ jobs:
           grep -q 'smart-factory-alert-dispatcher' /tmp/smart-factory-azure.yaml
           grep -q 'smart-factory-alert-dispatcher' /tmp/smart-factory-base.yaml
       - name: Build application images
-        run: docker compose build simulator consumer alert-dispatcher model-key-init model-trainer model-evaluator model-promoter model-rollback audit-verifier recovery-model-verifier
+        run: docker compose build simulator consumer alert-dispatcher model-key-init model-trainer model-evaluator model-promoter model-rollback audit-verifier audit-key-init audit-checkpoint-exporter audit-checkpoint-verifier recovery-model-verifier
       - name: Scan consumer image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -93,6 +93,15 @@ jobs:
             -U smart_factory -d smart_factory -At \
             -c "SELECT COUNT(*) FROM operator_audit_events WHERE actor = 'github-actions' AND correlation_id = '11111111-1111-1111-1111-111111111111' AND outcome IN ('started', 'succeeded')")
           test "$audit_event_count" = "2"
+          sudo install -d -o 10001 -g 10001 -m 0750 audit-checkpoints
+          AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_CHECKPOINT_NAME=ci-checkpoint.json docker compose --profile tools run --rm audit-checkpoint-exporter
+          AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_CHECKPOINT_NAME=ci-checkpoint.json docker compose --profile tools run --rm audit-checkpoint-verifier
+          cp audit-checkpoints/ci-checkpoint.json audit-checkpoints/tampered-checkpoint.json
+          python -c "import json; from pathlib import Path; path = Path('audit-checkpoints/tampered-checkpoint.json'); document = json.loads(path.read_text()); document['checkpoint']['event_count'] += 1; path.write_text(json.dumps(document))"
+          if AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_CHECKPOINT_NAME=tampered-checkpoint.json docker compose --profile tools run --rm audit-checkpoint-verifier; then
+            echo "tampered audit checkpoint unexpectedly verified"
+            exit 1
+          fi
           if docker compose exec -T timescaledb psql \
             -U smart_factory -d smart_factory -v ON_ERROR_STOP=1 \
             -c "UPDATE operator_audit_events SET reason = 'tampered'"; then
@@ -174,6 +183,13 @@ jobs:
             -c "SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace AND convalidated")
           test "$restored_foreign_key_count" = "$source_foreign_key_count"
           ML_MACHINE_IDS=press-01,press-02 docker compose --profile recovery run --rm recovery-model-verifier
+      - name: Retain signed audit checkpoint outside the database
+        uses: actions/upload-artifact@v4
+        with:
+          name: operator-audit-checkpoint-${{ github.sha }}
+          path: audit-checkpoints/ci-checkpoint.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Stop Compose services
         if: always()
         run: docker compose down -v

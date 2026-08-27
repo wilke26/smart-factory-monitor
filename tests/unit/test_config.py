@@ -4,6 +4,7 @@ import pytest
 
 from smart_factory.config import (
     AlertSettings,
+    AuditCheckpointSettings,
     MlSettings,
     MqttSecuritySettings,
     OperatorAuditSettings,
@@ -477,3 +478,59 @@ def test_rejects_invalid_audit_correlation_id(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(ValueError, match="must be a UUID"):
         OperatorAuditSettings.from_env()
+
+
+def test_reads_audit_checkpoint_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    model_signing_keys: tuple[Path, Path],
+) -> None:
+    private_path, public_path = model_signing_keys
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PRIVATE_KEY_PATH", str(private_path))
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(public_path))
+
+    settings = AuditCheckpointSettings.from_env(require_private_key=True)
+
+    assert settings.chain_id == "factory-production"
+    assert settings.private_key_path == str(private_path)
+    assert settings.public_key_path == str(public_path)
+
+
+def test_checkpoint_verification_does_not_require_private_key(
+    monkeypatch: pytest.MonkeyPatch,
+    model_signing_keys: tuple[Path, Path],
+) -> None:
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
+    monkeypatch.delenv("AUDIT_ATTESTATION_PRIVATE_KEY_PATH", raising=False)
+
+    settings = AuditCheckpointSettings.from_env(require_private_key=False)
+
+    assert settings.private_key_path is None
+
+
+def test_checkpoint_export_requires_private_key(
+    monkeypatch: pytest.MonkeyPatch,
+    model_signing_keys: tuple[Path, Path],
+) -> None:
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
+    monkeypatch.delenv("AUDIT_ATTESTATION_PRIVATE_KEY_PATH", raising=False)
+
+    with pytest.raises(ValueError, match="PRIVATE_KEY_PATH is required"):
+        AuditCheckpointSettings.from_env(require_private_key=True)
+
+
+def test_rejects_unsafe_audit_chain_id(
+    monkeypatch: pytest.MonkeyPatch,
+    model_signing_keys: tuple[Path, Path],
+) -> None:
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory production\nforged")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
+
+    with pytest.raises(ValueError, match="unsupported characters"):
+        AuditCheckpointSettings.from_env(require_private_key=False)

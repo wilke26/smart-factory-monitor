@@ -169,3 +169,10 @@ the complete chain. Production must still authenticate the asserted actor upstre
 restrict database ownership, export or externally attest the chain, define authorization,
 query access, retention, archival, and deletion policy, and add event types for key
 rotation and security-relevant configuration changes.
+
+v0.16 can export a verified chain head as a write-once JSON envelope signed by a separate
+Ed25519 attestation key. The corresponding verifier has no database dependency. CI stores
+the checkpoint as a workflow artifact for 30 days and rejects modified content. A
+production environment must use independently administered immutable storage, define
+checkpoint cadence and maximum age, alert on missing exports, protect and rotate the
+attestation key, and retain trusted public keys for the complete evidence lifetime.

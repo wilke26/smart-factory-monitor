@@ -93,3 +93,9 @@ writers, deterministic hash chaining, mutation rejection, chain verification, fa
 promotion and rollback attempts, terminal success/failure evidence, and recovery of the
 audit table. The shared database-pool factory was extracted while adding the fourth
 database adapter so pool behavior remains defined in one place.
+
+For v0.16, tests additionally cover canonical checkpoint serialization, a dedicated key
+fingerprint, exact Ed25519 verification, wrong-chain and wrong-key rejection, altered
+content, invalid JSON, write-once publication, fail-closed export from an invalid database
+chain, and database-independent verification. CI retains the genuine checkpoint outside
+PostgreSQL and confirms that a modified copy fails verification.

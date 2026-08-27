@@ -1,4 +1,4 @@
-# Architecture v0.15.0
+# Architecture v0.16.0
 
 ## Scope
 
@@ -17,6 +17,8 @@ Version 0.14.1 orders TimescaleDB restoration so hypertable keys are created in 
 mode and application foreign keys are validated only after `timescaledb_post_restore()`.
 Version 0.15 makes model promotion and rollback fail closed on an append-only,
 hash-chained operator audit trail and adds independent chain verification.
+Version 0.16 signs a verified chain head with a separate Ed25519 attestation key and
+exports a portable checkpoint that can be verified without database access.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -35,6 +37,9 @@ post-training telemetry → model-evaluator                              ▲
                                │                 │                     │
                                ├── atomic active.json ──────────────────┘
                                └── operator_audit_events hash chain
+                                             │ verify + sign
+                                             ▼
+                                  external checkpoint JSON
 
 application service → one transaction → telemetry_readings + anomaly_findings
                                                + alert outbox
@@ -60,8 +65,11 @@ quiesced writers → pg_dump + model registry + public key → checksummed backu
   claims, delivery-state transitions, bounded historical reads, and immutable model
   evaluation evidence plus serialized, hash-chained operator events.
 - `infrastructure.alerts` owns verified webhook transport.
+- `infrastructure.audit` owns canonical checkpoint signing, write-once publication, and
+  verification independent of PostgreSQL.
 - `consumer_main`, `alert_dispatcher_main`, `train_model_main`, `evaluate_model_main`,
-  `promote_model_main`, `rollback_model_main`, and `verify_audit_main` are separate
+  `promote_model_main`, `rollback_model_main`, `verify_audit_main`,
+  `export_audit_checkpoint_main`, and `verify_audit_checkpoint_main` are separate
   composition roots.
 - Containerized recovery adapters own PostgreSQL dump/restore and filesystem packaging;
   they do not enter the online application dependency graph.
@@ -150,6 +158,13 @@ human model approval, key rotation, registry archival policy, destination-specif
 escalation policy, production backup scheduling/off-site retention, retention/compression, managed-service
 infrastructure, and automatic deployment remain explicit future work. PSI indicates
 distribution change, not failure causality or predictive accuracy.
+
+The database hash chain detects mutation only while at least one trusted earlier head is
+available. Signed v0.16 checkpoints provide that anchor. Their attestation private key is
+separate from the model-signing key, and the verifier needs only the checkpoint, expected
+chain ID, attestation public key, and no database connection. Scheduling, immutable
+external retention, key rotation, and checkpoint freshness policy remain deployment
+responsibilities.
 
 ## Deployment boundary
 

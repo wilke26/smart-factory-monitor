@@ -10,7 +10,8 @@ RUN apt-get update \
     && groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app \
     && mkdir -p /models /run/ml-signing/private /run/ml-signing/public \
-    && chown -R app:app /models /run/ml-signing
+        /run/audit-attestation/private /run/audit-attestation/public /audit-checkpoints \
+    && chown -R app:app /models /run/ml-signing /run/audit-attestation /audit-checkpoints
 
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./

@@ -13,5 +13,6 @@ build
 output
 _to_delete
 backups
+audit-checkpoints
 tests
 docs
