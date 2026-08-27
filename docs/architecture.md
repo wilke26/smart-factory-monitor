@@ -1,4 +1,4 @@
-# Architecture v0.17.0
+# Architecture v0.17.1
 
 ## Scope
 
@@ -182,6 +182,13 @@ fingerprint with the public keyring for demonstration; production must make the 
 independently administered, immutable trust input. Scheduling, immutable external
 retention, rotation authorization, and checkpoint freshness policy remain deployment
 responsibilities.
+
+v0.17.1 holds one filesystem-backed advisory lock across active-key validation, the
+`started` event, filesystem publication, and the terminal event. Before mutation, the
+active key must resolve through the complete dual-signed transition path from the pinned
+root and must match the deployed public key. This prevents concurrent rotations from
+forking the keyring and rejects an already broken trust history before new evidence is
+published.
 
 ## Deployment boundary
 

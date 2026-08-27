@@ -104,3 +104,8 @@ For v0.17, tests cover root initialization, immutable archived public keys, dual
 transitions, fork/cycle/tamper rejection, audited rotation success and failure, and
 verification of checkpoints created on both sides of a rotation. CI rotates the key,
 checks its operator events, and retains verifiable pre- and post-rotation checkpoints.
+
+For v0.17.1, review findings were reproduced against the implementation rather than
+accepted from the report alone. Regression tests verify that an active key disconnected
+from the pinned root cannot rotate and that independent rotator instances serialize on
+the shared filesystem lock.

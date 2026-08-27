@@ -191,6 +191,12 @@ new key. Verify at least one checkpoint from before and after rotation. Back up 
 private key under the deployment's recovery policy, but distribute only public material
 to verifiers.
 
+v0.17.1 serializes the entire audited command with a lock in the writable keyring. It also
+walks the complete transition path from the configured root to the active key before
+writing the `started` event or staging replacement material. A concurrent invocation
+waits and then observes the newly active key; a missing, forked, or modified trust path
+aborts without starting a new rotation.
+
 The trusted root fingerprint is the long-lived trust anchor. In production, mount or
 inject `AUDIT_ATTESTATION_ROOT_KEY_ID_PATH` from storage controlled independently from
 the writable keyring and active keys. Retain the root, every transition, every referenced

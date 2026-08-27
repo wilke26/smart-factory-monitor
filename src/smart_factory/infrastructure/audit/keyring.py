@@ -6,9 +6,13 @@ import json
 import os
 import re
 from base64 import b64decode, b64encode
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC
+from fcntl import LOCK_EX, LOCK_UN, flock
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from threading import get_ident
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -52,6 +56,7 @@ class AuditAttestationKeyring:
         self._keys_directory = directory / "keys"
         self._transitions_directory = directory / "transitions"
         self._active_key_id_path = directory / "active-key-id"
+        self._rotation_lock_path = directory / ".rotation.lock"
         self._trusted_root_key_id_path = trusted_root_key_id_path
 
     def initialize(self, public_key_path: Path) -> str:
@@ -71,6 +76,23 @@ class AuditAttestationKeyring:
 
     def trusted_root_key_id(self) -> str:
         return self._read_key_id(self._trusted_root_key_id_path, "trusted root audit key ID")
+
+    @contextmanager
+    def exclusive_rotation(self) -> Iterator[None]:
+        self._directory.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(
+            self._rotation_lock_path,
+            os.O_RDWR | os.O_CREAT | os.O_CLOEXEC,
+            0o600,
+        )
+        try:
+            flock(descriptor, LOCK_EX)
+            try:
+                yield
+            finally:
+                flock(descriptor, LOCK_UN)
+        finally:
+            os.close(descriptor)
 
     def key_path(self, key_id: str) -> Path:
         if not KEY_ID_PATTERN.fullmatch(key_id):
@@ -228,14 +250,32 @@ class FilesystemAuditAttestationKeyRotator:
         self._private_key_path = private_key_path
         self._public_key_path = public_key_path
         self._keyring = keyring
+        self._rotation_owner: int | None = None
+
+    @contextmanager
+    def exclusive(self) -> Iterator[None]:
+        with self._keyring.exclusive_rotation():
+            self._rotation_owner = get_ident()
+            try:
+                yield
+            finally:
+                self._rotation_owner = None
 
     def current_key_id(self) -> str:
         active = self._keyring.active_key_id()
         if public_key_id(self._public_key_path) != active:
             raise AuditCheckpointError("active audit key does not match public key")
+        trusted_key_path = self._keyring.resolve_trusted_key(
+            active,
+            expected_chain_id=self._chain_id,
+        )
+        if trusted_key_path.read_bytes() != self._public_key_path.read_bytes():
+            raise AuditCheckpointError("active audit key does not match trusted keyring")
         return active
 
     def rotate(self) -> AuditKeyRotationResult:
+        if self._rotation_owner != get_ident():
+            raise AuditCheckpointError("audit key rotation requires exclusive lock")
         previous_key_id = self.current_key_id()
         previous_signer = ArtifactSigner.from_private_key_file(self._private_key_path)
         replacement = Ed25519PrivateKey.generate()

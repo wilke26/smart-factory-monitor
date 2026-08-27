@@ -33,9 +33,18 @@ before filesystem mutation and a terminal `succeeded` or `failed` event afterwar
 reason, and correlation ID remain mandatory. Migration 007 extends the database-enforced
 action vocabulary with `audit_attestation_key_rotation`.
 
+The v0.17.1 correction acquires an exclusive lock stored in the writable keyring before
+reading the active key and retains it through the terminal audit event. The active key
+must resolve through the verified transition path from the pinned root and match the
+deployed public key before a new rotation can start.
+
 ## Consequences
 
 - Historical and new checkpoints remain verifiable from one stable trust anchor.
+- Concurrent rotation commands are serialized and cannot publish sibling transitions
+  from the same active key.
+- A broken existing root-to-active path prevents mutation instead of being discovered
+  only by a later checkpoint verification.
 - Possession of only the new key cannot authorize its insertion into an existing chain;
   the previous key must also sign the transition.
 - Every referenced public key and transition must be retained for the evidence lifetime.

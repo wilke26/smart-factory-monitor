@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -20,6 +21,7 @@ def context() -> OperatorAuditContext:
 
 def test_audits_started_and_successful_rotation() -> None:
     rotator = Mock()
+    rotator.exclusive.return_value = nullcontext()
     rotator.current_key_id.return_value = "a" * 64
     rotator.rotate.return_value = AuditKeyRotationResult(
         transition_id=UUID("22222222-2222-2222-2222-222222222222"),
@@ -44,6 +46,7 @@ def test_audits_started_and_successful_rotation() -> None:
 
 def test_audits_failed_rotation_and_reraises() -> None:
     rotator = Mock()
+    rotator.exclusive.return_value = nullcontext()
     rotator.current_key_id.return_value = "a" * 64
     rotator.rotate.side_effect = OSError("disk full")
     trail = Mock()

@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.17.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.17.1** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -35,7 +35,9 @@ attestation key so retained evidence can reveal even a complete database-side re
 v0.17 adds audited attestation-key rotation with a transition signed by both the previous
 and replacement keys. A separately pinned root fingerprint anchors the transition chain,
 so checkpoints created before and after rotation remain verifiable without silently
-trusting an unconnected replacement key.
+trusting an unconnected replacement key. v0.17.1 validates that the active key is still
+reachable from that root before mutation and serializes the complete audited rotation so
+concurrent operators cannot create a fork or record a stale previous key.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
