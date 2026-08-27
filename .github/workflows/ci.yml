@@ -154,7 +154,10 @@ jobs:
           test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c 'SELECT COUNT(*) FROM anomaly_alert_outbox')" = "$source_alert_count"
           test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c 'SELECT COUNT(*) FROM model_evaluation_runs')" = "$source_evaluation_count"
           test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c 'SELECT COUNT(*) FROM schema_migrations')" = "$source_migration_count"
-          test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c \"SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace AND convalidated\")" = "$source_foreign_key_count"
+          restored_foreign_key_count=$(docker compose exec -T timescaledb psql \
+            -U smart_factory -d smart_factory_restore -At \
+            -c "SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace AND convalidated")
+          test "$restored_foreign_key_count" = "$source_foreign_key_count"
           ML_MACHINE_IDS=press-01,press-02 docker compose --profile recovery run --rm recovery-model-verifier
       - name: Stop Compose services
         if: always()
