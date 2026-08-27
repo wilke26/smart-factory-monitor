@@ -14,6 +14,7 @@ AuditState = tuple[tuple[str, AuditValue], ...]
 class OperatorAction(StrEnum):
     MODEL_PROMOTION = "model_promotion"
     MODEL_ROLLBACK = "model_rollback"
+    AUDIT_ATTESTATION_KEY_ROTATION = "audit_attestation_key_rotation"
 
 
 class OperatorActionOutcome(StrEnum):

@@ -511,6 +511,62 @@ def test_checkpoint_verification_does_not_require_private_key(
     assert settings.private_key_path is None
 
 
+def test_reads_required_audit_keyring_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    model_signing_keys: tuple[Path, Path],
+) -> None:
+    keyring_path = tmp_path / "keyring"
+    keyring_path.mkdir()
+    root_path = tmp_path / "trusted-root-key-id"
+    root_path.write_text("a" * 64)
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
+    monkeypatch.setenv("AUDIT_ATTESTATION_KEYRING_PATH", str(keyring_path))
+    monkeypatch.setenv("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH", str(root_path))
+
+    settings = AuditCheckpointSettings.from_env(
+        require_private_key=False,
+        require_keyring=True,
+    )
+
+    assert settings.keyring_path == str(keyring_path)
+    assert settings.trusted_root_key_id_path == str(root_path)
+
+
+@pytest.mark.parametrize(
+    ("missing_name", "message"),
+    [
+        ("AUDIT_ATTESTATION_KEYRING_PATH", "KEYRING_PATH is required"),
+        ("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH", "ROOT_KEY_ID_PATH is required"),
+    ],
+)
+def test_checkpoint_verification_requires_complete_keyring_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    model_signing_keys: tuple[Path, Path],
+    missing_name: str,
+    message: str,
+) -> None:
+    keyring_path = tmp_path / "keyring"
+    keyring_path.mkdir()
+    root_path = tmp_path / "trusted-root-key-id"
+    root_path.write_text("a" * 64)
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
+    monkeypatch.setenv("AUDIT_ATTESTATION_KEYRING_PATH", str(keyring_path))
+    monkeypatch.setenv("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH", str(root_path))
+    monkeypatch.delenv(missing_name)
+
+    with pytest.raises(ValueError, match=message):
+        AuditCheckpointSettings.from_env(
+            require_private_key=False,
+            require_keyring=True,
+        )
+
+
 def test_checkpoint_export_requires_private_key(
     monkeypatch: pytest.MonkeyPatch,
     model_signing_keys: tuple[Path, Path],

@@ -150,8 +150,9 @@ ORDER BY sequence_number;
 The local command accepts an asserted `AUDIT_ACTOR`; it does not authenticate that value.
 Production release automation must inject an identity derived from its authenticated
 operator or workload and restrict direct database ownership. External attestation,
-retention, archival, query authorization, and audit events for key rotation and security
-configuration remain deployment work.
+retention, archival, query authorization, and audit events for security-relevant
+configuration changes remain deployment work. Attestation-key rotation is audited in
+v0.17; model-signing key rotation remains separate production work.
 
 ### Signed audit checkpoints
 
@@ -173,16 +174,31 @@ AUDIT_CHAIN_ID=smart-factory-local AUDIT_CHECKPOINT_NAME=manual-2026-08-27.json 
   docker compose --profile tools run --rm --no-deps audit-checkpoint-verifier
 ```
 
-Retain the JSON and trusted public key outside the database administrative boundary. A
+Retain the JSON, pinned root fingerprint, public-key archive, and signed transitions
+outside the database administrative boundary. A
 valid historical checkpoint proves the exact event count and head hash observed at its
 creation time; it does not prove that later events were retained or that checkpoints were
 created on schedule. Production policy must define checkpoint cadence, freshness alerts,
-immutable storage, retention, and attestation-key rotation.
+immutable storage, and retention.
+
+Rotate the attestation key only through the audited command:
+
+```bash
+AUDIT_ACTOR=<trusted-identity> AUDIT_REASON=<ticket-or-reason> \
+AUDIT_CORRELATION_ID=<uuid> AUDIT_CHAIN_ID=smart-factory-local \
+  docker compose --profile tools run --rm audit-key-rotator
+```
+
+The replacement becomes trusted only through a transition signed by both the previous
+and new keys. A verifier walks from the independently pinned root fingerprint, so it can
+still validate historical checkpoints after multiple rotations. Losing any archived key
+or transition breaks verification beyond that point; replacing the root changes the
+trust domain and is not a normal rotation.
 
 ## Remaining controls
 
 The local registry is not a production model platform. Signatures establish integrity
 and provenance under the configured key. The offline gates provide post-training
 distribution evidence but not labelled accuracy or human approval. Approval integration,
-generation retention, key rotation, registry distribution, scheduled external checkpoint retention,
+generation retention, registry distribution, scheduled external checkpoint retention,
 and a defined retention and access policy remain explicit future work.

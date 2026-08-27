@@ -5,13 +5,16 @@ from smart_factory.generate_audit_key_main import main
 
 
 @patch("smart_factory.generate_audit_key_main.LOGGER")
+@patch("smart_factory.generate_audit_key_main.AuditAttestationKeyring")
 @patch("smart_factory.generate_audit_key_main.ensure_ed25519_key_pair", return_value=True)
 @patch("smart_factory.generate_audit_key_main.configure_logging")
 def test_generates_separate_audit_attestation_key_pair(
     configure_logging: Mock,
     ensure_key_pair: Mock,
+    keyring_type: Mock,
     logger: Mock,
 ) -> None:
+    keyring_type.return_value.initialize.return_value = "a" * 64
     with patch.dict(
         "os.environ",
         {
@@ -30,3 +33,4 @@ def test_generates_separate_audit_attestation_key_pair(
     )
     assert logger.info.call_args.args[0] == "audit_attestation_key_ready"
     assert "private" not in str(logger.info.call_args)
+    assert logger.info.call_args.kwargs["extra"]["key_id"] == "a" * 64

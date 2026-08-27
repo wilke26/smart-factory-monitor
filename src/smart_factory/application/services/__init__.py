@@ -2,6 +2,9 @@
 
 from smart_factory.application.services.alert_dispatch import AlertDispatcher
 from smart_factory.application.services.anomaly_detection import CompositeAnomalyDetector
+from smart_factory.application.services.audit_key_rotation import (
+    AuditAttestationKeyRotationService,
+)
 from smart_factory.application.services.model_promotion import (
     ModelPromotionService,
     ModelRollbackService,
@@ -10,6 +13,7 @@ from smart_factory.application.services.telemetry import TelemetryApplicationSer
 
 __all__ = [
     "AlertDispatcher",
+    "AuditAttestationKeyRotationService",
     "CompositeAnomalyDetector",
     "ModelPromotionService",
     "ModelRollbackService",

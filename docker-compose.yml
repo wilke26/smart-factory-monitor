@@ -318,6 +318,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       AUDIT_ATTESTATION_PRIVATE_KEY_PATH: /run/audit-attestation/private/private.pem
       AUDIT_ATTESTATION_PUBLIC_KEY_PATH: /run/audit-attestation/public/public.pem
+      AUDIT_ATTESTATION_KEYRING_PATH: /run/audit-attestation/public/keyring
+      AUDIT_ATTESTATION_ROOT_KEY_ID_PATH: /run/audit-attestation/public/trusted-root-key-id
     volumes:
       - audit-attestation-private:/run/audit-attestation/private
       - audit-attestation-public:/run/audit-attestation/public
@@ -366,9 +368,43 @@ services:
       AUDIT_CHAIN_ID: ${AUDIT_CHAIN_ID:-smart-factory-local}
       AUDIT_CHECKPOINT_PATH: /audit-checkpoints/${AUDIT_CHECKPOINT_NAME:-checkpoint.json}
       AUDIT_ATTESTATION_PUBLIC_KEY_PATH: /run/audit-attestation/public/public.pem
+      AUDIT_ATTESTATION_KEYRING_PATH: /run/audit-attestation/public/keyring
+      AUDIT_ATTESTATION_ROOT_KEY_ID_PATH: /run/audit-attestation/public/trusted-root-key-id
     volumes:
       - audit-attestation-public:/run/audit-attestation/public:ro
       - ${AUDIT_CHECKPOINT_DIRECTORY:-./audit-checkpoints}:/audit-checkpoints:ro
+
+  audit-key-rotator:
+    build:
+      context: .
+      args:
+        PROJECT_INSTALL: ".[ml]"
+    command: ["smart-factory-rotate-audit-key"]
+    profiles: ["tools"]
+    restart: "no"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      audit-key-init:
+        condition: service_completed_successfully
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://smart_factory:smart_factory_dev@timescaledb:5432/smart_factory}
+      DATABASE_POOL_MIN_SIZE: ${DATABASE_POOL_MIN_SIZE:-1}
+      DATABASE_POOL_MAX_SIZE: ${DATABASE_POOL_MAX_SIZE:-4}
+      DATABASE_CONNECT_TIMEOUT_SECONDS: ${DATABASE_CONNECT_TIMEOUT_SECONDS:-10.0}
+      AUDIT_ACTOR: ${AUDIT_ACTOR:-}
+      AUDIT_REASON: ${AUDIT_REASON:-}
+      AUDIT_CORRELATION_ID: ${AUDIT_CORRELATION_ID:-}
+      AUDIT_CHAIN_ID: ${AUDIT_CHAIN_ID:-smart-factory-local}
+      AUDIT_CHECKPOINT_PATH: /audit-checkpoints/unused.json
+      AUDIT_ATTESTATION_PRIVATE_KEY_PATH: /run/audit-attestation/private/private.pem
+      AUDIT_ATTESTATION_PUBLIC_KEY_PATH: /run/audit-attestation/public/public.pem
+      AUDIT_ATTESTATION_KEYRING_PATH: /run/audit-attestation/public/keyring
+      AUDIT_ATTESTATION_ROOT_KEY_ID_PATH: /run/audit-attestation/public/trusted-root-key-id
+    volumes:
+      - audit-attestation-private:/run/audit-attestation/private
+      - audit-attestation-public:/run/audit-attestation/public
 
   backup-create:
     image: timescale/timescaledb:2.29.0-pg16@sha256:d8336a5c9cc49bdbf1e935234e8c87ab64b6d6d195fd2ecedff7b00185557631

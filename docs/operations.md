@@ -160,7 +160,7 @@ point-in-time recovery. Private signing-key recovery remains a separate security
 A shared or production environment still needs managed broker ACL provisioning and secret
 rotation, managed backup scheduling and off-site retention, alert rules, durable metric collection, migration rollback
 policy, alert dead-letter/escalation policy, TimescaleDB retention/compression, human model
-approval integration, registry-generation retention, and signing-key rotation.
+approval integration, registry-generation retention, and independently managed key custody.
 
 v0.15 provides a database-enforced append-only and hash-chained audit trail for model
 promotion and rollback. It records actor, reason, correlation ID, timestamp, previous and
@@ -174,5 +174,25 @@ v0.16 can export a verified chain head as a write-once JSON envelope signed by a
 Ed25519 attestation key. The corresponding verifier has no database dependency. CI stores
 the checkpoint as a workflow artifact for 30 days and rejects modified content. A
 production environment must use independently administered immutable storage, define
-checkpoint cadence and maximum age, alert on missing exports, protect and rotate the
-attestation key, and retain trusted public keys for the complete evidence lifetime.
+checkpoint cadence and maximum age, and alert on missing exports.
+
+v0.17 adds explicit audited rotation. Run it only from an authorized operator context and
+use the identical chain ID used by checkpoint export:
+
+```bash
+AUDIT_ACTOR=<trusted-identity> AUDIT_REASON=<ticket-or-reason> \
+AUDIT_CORRELATION_ID=<uuid> AUDIT_CHAIN_ID=smart-factory-local \
+  docker compose --profile tools run --rm audit-key-rotator
+```
+
+The command creates a replacement Ed25519 pair, archives its public key, and publishes a
+transition signed by both the current and replacement private keys before activating the
+new key. Verify at least one checkpoint from before and after rotation. Back up the
+private key under the deployment's recovery policy, but distribute only public material
+to verifiers.
+
+The trusted root fingerprint is the long-lived trust anchor. In production, mount or
+inject `AUDIT_ATTESTATION_ROOT_KEY_ID_PATH` from storage controlled independently from
+the writable keyring and active keys. Retain the root, every transition, every referenced
+public key, and every checkpoint for the complete evidence lifetime. Alert on forks,
+missing transitions, partial rotations, checkpoint staleness, and unexpected key IDs.

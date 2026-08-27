@@ -99,3 +99,8 @@ fingerprint, exact Ed25519 verification, wrong-chain and wrong-key rejection, al
 content, invalid JSON, write-once publication, fail-closed export from an invalid database
 chain, and database-independent verification. CI retains the genuine checkpoint outside
 PostgreSQL and confirms that a modified copy fails verification.
+
+For v0.17, tests cover root initialization, immutable archived public keys, dual-signed
+transitions, fork/cycle/tamper rejection, audited rotation success and failure, and
+verification of checkpoints created on both sides of a rotation. CI rotates the key,
+checks its operator events, and retains verifiable pre- and post-rotation checkpoints.

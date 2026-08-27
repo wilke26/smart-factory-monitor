@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 
+from smart_factory.infrastructure.audit.keyring import AuditAttestationKeyring
 from smart_factory.infrastructure.ml.artifact_signing import ensure_ed25519_key_pair
 from smart_factory.logging import configure_logging
 
@@ -25,9 +26,23 @@ def main() -> None:
         )
     )
     created = ensure_ed25519_key_pair(private_path, public_path)
+    keyring_path = Path(
+        os.getenv("AUDIT_ATTESTATION_KEYRING_PATH", "/run/audit-attestation/public/keyring")
+    )
+    root_key_id_path = Path(
+        os.getenv(
+            "AUDIT_ATTESTATION_ROOT_KEY_ID_PATH",
+            "/run/audit-attestation/public/trusted-root-key-id",
+        )
+    )
+    key_id = AuditAttestationKeyring(keyring_path, root_key_id_path).initialize(public_path)
     LOGGER.info(
         "audit_attestation_key_ready",
-        extra={"key_created": created, "public_key_path": str(public_path)},
+        extra={
+            "key_created": created,
+            "key_id": key_id,
+            "public_key_path": str(public_path),
+        },
     )
 
 

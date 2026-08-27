@@ -9,6 +9,7 @@ from smart_factory.infrastructure.audit.checkpoint import (
     load_signed_checkpoint,
     verify_signed_checkpoint,
 )
+from smart_factory.infrastructure.audit.keyring import AuditAttestationKeyring
 from smart_factory.infrastructure.ml.artifact_signing import ArtifactVerifier
 from smart_factory.logging import configure_logging
 
@@ -16,9 +17,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 def run(settings: AuditCheckpointSettings) -> None:
-    public_key_path = Path(settings.public_key_path)
+    if settings.keyring_path is None or settings.trusted_root_key_id_path is None:
+        raise ValueError("audit checkpoint verification requires a trusted keyring")
+    envelope = load_signed_checkpoint(Path(settings.checkpoint_path))
+    public_key_path = AuditAttestationKeyring(
+        Path(settings.keyring_path),
+        Path(settings.trusted_root_key_id_path),
+    ).resolve_trusted_key(
+        envelope.checkpoint.key_id,
+        expected_chain_id=settings.chain_id,
+    )
     checkpoint = verify_signed_checkpoint(
-        load_signed_checkpoint(Path(settings.checkpoint_path)),
+        envelope,
         verifier=ArtifactVerifier.from_public_key_file(public_key_path),
         public_key_path=public_key_path,
         expected_chain_id=settings.chain_id,
@@ -37,7 +47,12 @@ def run(settings: AuditCheckpointSettings) -> None:
 
 def main() -> None:
     configure_logging(os.getenv("LOG_LEVEL", "INFO").upper())
-    run(AuditCheckpointSettings.from_env(require_private_key=False))
+    run(
+        AuditCheckpointSettings.from_env(
+            require_private_key=False,
+            require_keyring=True,
+        )
+    )
 
 
 if __name__ == "__main__":

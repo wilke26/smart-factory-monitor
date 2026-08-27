@@ -7,6 +7,7 @@ from smart_factory.application.ports.alerts import (
     ClaimedAlert,
 )
 from smart_factory.application.ports.anomaly import AnomalyDetector
+from smart_factory.application.ports.audit_keyring import AuditAttestationKeyRotator
 from smart_factory.application.ports.model_evaluation import (
     ModelApprovalReader,
     ModelEvaluationStore,
@@ -20,6 +21,7 @@ __all__ = [
     "AlertOutbox",
     "AlertSink",
     "AnomalyDetector",
+    "AuditAttestationKeyRotator",
     "ClaimedAlert",
     "ModelApprovalReader",
     "ModelEvaluationStore",

@@ -64,7 +64,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.16.0 \
+  --image smart-factory-monitor:0.17.0 \
   --build-arg 'PROJECT_INSTALL=.[ml]' .
 
 az aks update \
@@ -124,4 +124,4 @@ curl --fail http://127.0.0.1:8000/metrics
 Production rollout still needs endpoint-specific network destinations, managed broker ACL
 creation, certificate/credential/signing-key rotation, schema-migration automation,
 managed database and model-registry backups with tested restore procedures, durable metrics and alert escalation policy, human model approval, registry
-generation retention, and signing-key rotation.
+generation retention, externally pinned audit roots, and controlled signing-key rotation.
