@@ -261,9 +261,7 @@ class FilesystemAuditAttestationKeyRotator:
             previous_signature=b64encode(previous_signer.sign(payload)).decode("ascii"),
             new_signature=b64encode(replacement_signer.sign(payload)).decode("ascii"),
         )
-        pending_private_key_path = self._private_key_path.parent / (
-            f".pending-{new_key_id}.pem"
-        )
+        pending_private_key_path = self._private_key_path.parent / f".pending-{new_key_id}.pem"
         self._keyring._write_once(pending_private_key_path, private_bytes, 0o600)
         self._keyring.publish_transition(envelope, new_public_key=public_bytes)
         self._keyring._replace(self._public_key_path, public_bytes, 0o644)
