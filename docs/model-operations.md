@@ -2,18 +2,16 @@
 
 ## Registry contract
 
-`ML_MODEL_DIRECTORY` contains one artifact named `<machine_id>.joblib` and one detached
-signature named `<machine_id>.joblib.sig` per machine. `ML_MACHINE_IDS` is a
+`ML_MODEL_DIRECTORY` contains candidate, immutable version, manifest-history, and active
+manifest areas. `ML_MACHINE_IDS` is a
 comma-separated allowlist used by
 both the offline trainer and online consumer. IDs are normalized for whitespace,
 deduplicated in order, and validated as lowercase slugs.
 
-When ML is enabled, startup is all-or-nothing: every configured artifact and signature
-must exist. The consumer verifies the exact artifact bytes with the configured Ed25519
-public key before joblib deserialization, then applies format, feature, machine,
-estimator, and scikit-learn-version checks. Files not listed in `ML_MACHINE_IDS` remain
-inactive. This makes the deployed model set explicit and keeps an old file in the volume
-from silently affecting inference.
+When ML is enabled, startup is all-or-nothing: `active.json` must reference every
+configured machine. The consumer derives content-addressed paths, verifies digest and
+Ed25519 signature before joblib deserialization, then applies format, feature, machine,
+estimator, and scikit-learn-version checks. Unreferenced files remain inactive.
 
 ## Batch training
 
@@ -26,9 +24,9 @@ ML_MACHINE_IDS=press-01,press-02 \
 ```
 
 Every machine needs at least `ML_MINIMUM_TRAINING_SAMPLES` valid readings. The trainer
-requires `ML_SIGNING_PRIVATE_KEY_PATH`, signs the serialized bytes, and atomically replaces
-the signature and artifact. Training remains an operator-controlled offline action; the
-consumer never retrains or reloads models in place.
+requires `ML_SIGNING_PRIVATE_KEY_PATH`, signs the serialized bytes, and writes the pair to
+`candidates/`. Training remains operator-controlled; the consumer never reads candidates,
+retrains, or reloads models in place.
 
 Compose runs `model-key-init` automatically to create a persistent development key pair.
 The trainer mounts only its private-key volume and the consumer mounts only its public-key
@@ -79,17 +77,43 @@ training boundary are deliberately not treated as post-training evidence. Existi
 format-v1 artifacts are incompatible and must be retrained.
 
 ```sql
-SELECT evaluated_at, model_id, sample_count, anomaly_rate,
+SELECT evaluated_at, model_id, artifact_sha256, sample_count, anomaly_rate,
        maximum_feature_psi, passed, failed_gates
 FROM model_evaluation_runs
 WHERE machine_id = 'press-01'
 ORDER BY evaluated_at DESC;
 ```
 
+## Promotion and rollback
+
+After every configured candidate passes evaluation, promote the complete set:
+
+```bash
+ML_MACHINE_IDS=press-01,press-02 \
+  docker compose --profile tools run --rm model-promoter
+```
+
+Promotion queries a passed row matching machine ID, signed model ID, and exact artifact
+SHA-256 for every candidate before writing anything active. It stores artifacts and
+signatures below `versions/<machine-id>/<sha256>.joblib[.sig]`, archives a strict manifest
+under `manifests/<generation-id>.json`, and atomically replaces `active.json`. A changed,
+missing, unsigned, or unevaluated candidate rejects the complete batch.
+
+Record the generation UUID emitted by `ml_models_promoted`. Restore an earlier complete
+set by explicitly selecting its archived generation:
+
+```bash
+ML_ROLLBACK_GENERATION_ID=<generation-uuid> \
+  docker compose --profile tools run --rm model-rollback
+```
+
+Rollback revalidates every digest and signature and creates a new active generation whose
+`source_generation_id` records the selected history entry. Restart the consumer after a
+promotion or rollback; it deliberately does not hot-reload registry state.
+
 ## Remaining controls
 
 The local registry is not a production model platform. Signatures establish integrity
 and provenance under the configured key. The offline gates provide post-training
-distribution evidence but not labelled accuracy or approval. Immutable version storage,
-rollback, controlled promotion, key rotation, and registry
-distribution remain explicit future work.
+distribution evidence but not labelled accuracy or human approval. Approval integration,
+generation retention, key rotation, and registry distribution remain explicit future work.

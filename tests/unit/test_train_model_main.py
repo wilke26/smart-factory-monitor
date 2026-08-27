@@ -52,8 +52,8 @@ def test_trains_from_bounded_history_and_closes_repository(
         signer=signer_from_file.return_value,
     )
     assert trainer_type.return_value.train.call_args_list == [
-        call(readings, Path("/models/press-01.joblib")),
-        call(readings, Path("/models/press-02.joblib")),
+        call(readings, Path("/models/candidates/press-01.joblib")),
+        call(readings, Path("/models/candidates/press-02.joblib")),
     ]
     repository_type.return_value.close.assert_called_once()
 

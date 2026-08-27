@@ -9,3 +9,15 @@ class ModelEvaluationStore(Protocol):
     """Persist one immutable evaluation result."""
 
     def save(self, evidence: ModelEvaluationEvidence) -> None: ...
+
+
+class ModelApprovalReader(Protocol):
+    """Check promotion eligibility for one exact evaluated artifact."""
+
+    def has_passed(
+        self,
+        *,
+        machine_id: str,
+        model_id: str,
+        artifact_sha256: str,
+    ) -> bool: ...

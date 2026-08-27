@@ -1,4 +1,4 @@
-# Architecture v0.12.0
+# Architecture v0.13.0
 
 ## Scope
 
@@ -9,24 +9,27 @@ Version 0.11.1 makes a lost lease an explicit non-fatal concurrency outcome so a
 worker cannot stop delivery of the remaining claimed batch.
 Version 0.12 adds an outbound model-evaluation store so release evidence survives the
 one-shot evaluator process without coupling gate calculation to PostgreSQL.
+Version 0.13 binds that evidence to exact candidate bytes and separates training,
+evaluation, atomic promotion, active inference, and rollback into explicit lifecycle steps.
 
 ```text
-Offline paths                                      Online path
-telemetry_readings                   MQTT → validation → application service
-        │                                                │
-        ▼                                                ▼
-model-trainer → reference + sign → registry        CompositeAnomalyDetector
- private key              artifact + sig            ├── rules (always)
-                                  │                 └── MachineModelRegistry (opt-in)
- public key ── verify ─────────────┤                      └── Isolation Forest by machine
-                                  ▼
-                    model-evaluator ← post-training telemetry
-                    sample/anomaly/PSI quality gates
-                             │
-                             └── immutable model_evaluation_runs evidence
-                                                       │
-                                                       ▼ one transaction
-                                      telemetry_readings + anomaly_findings
+Offline ML lifecycle                              Online telemetry path
+telemetry_readings                                MQTT → validation → application service
+        │                                                               │
+        ▼                                                               ▼
+model-trainer → reference + sign → candidates              CompositeAnomalyDetector
+ private key                         │                       ├── rules (always)
+                                     ▼                       └── MachineModelRegistry
+post-training telemetry → model-evaluator                              ▲
+                         quality gates                                 │ startup load
+                               │                                       │
+                               ├── model_evaluation_runs + SHA-256     │
+                               ▼                                       │
+                        model-promoter → signed versions ← rollback    │
+                               │                                       │
+                               └── atomic active.json ──────────────────┘
+
+application service → one transaction → telemetry_readings + anomaly_findings
                                                + alert outbox
                                                        │
                                                        ▼
@@ -39,32 +42,33 @@ model-trainer → reference + sign → registry        CompositeAnomalyDetector
 - `application` owns the technology-neutral detector, alert-outbox and alert-sink ports,
   processing orchestration, detector composition, and retry scheduling.
 - `infrastructure.ml` owns scikit-learn training, artifact signing and verification,
-  reference distributions, offline evaluation, registry validation, and machine-aware
-  inference dispatch.
+  reference distributions, offline evaluation, immutable version publication, atomic
+  registry manifests, rollback, validation, and machine-aware inference dispatch.
 - `infrastructure.database` supplies atomic telemetry/outbox persistence, leased alert
   claims, delivery-state transitions, bounded historical reads, and immutable model
   evaluation evidence.
 - `infrastructure.alerts` owns verified webhook transport.
-- `consumer_main`, `alert_dispatcher_main`, `train_model_main`, and `evaluate_model_main`
-  are separate composition roots.
+- `consumer_main`, `alert_dispatcher_main`, `train_model_main`, `evaluate_model_main`,
+  `promote_model_main`, and `rollback_model_main` are separate composition roots.
 
 The real-time application service sees only the detector protocol. It neither imports
 scikit-learn nor decides whether ML is enabled.
 
 ## Model lifecycle boundary
 
-Training reads a bounded window for one machine and uses a fixed random seed. It signs the
-serialized bytes with an offline Ed25519 private key and atomically publishes the detached
-signature and artifact, but does not promote or activate them. Operators explicitly
-restart the consumer with ML enabled after training. The consumer has only the public key
-and fails closed on a missing, unsigned, invalid, or incompatible enabled model.
+Training reads bounded windows, uses a fixed random seed, signs serialized bytes with the
+offline Ed25519 private key, and writes only candidate pairs. Evaluation binds each result
+to the candidate digest. Promotion requires passed evidence for every exact candidate,
+publishes content-addressed signed versions, and activates the complete set through one
+atomic manifest replacement. No partial multi-machine set becomes active.
 
-The registry requires `<machine_id>.joblib` and `<machine_id>.joblib.sig` for every
-configured machine and activates no unconfigured file. It verifies the exact bytes read
-into memory before passing those same bytes to joblib, then validates format version,
-exact feature order, filename identity, estimator type, and scikit-learn version. Because
-joblib has pickle semantics, public-key distribution and private-key custody remain trust
-boundaries even though the model volume itself no longer grants authority to deserialize.
+The consumer has only the public key and loads only entries in `active.json`. Paths are
+derived from validated machine IDs and digests, then the consumer verifies digest and
+signature before passing the bytes to joblib. It also validates format version, exact
+feature order, embedded machine and model identity, estimator type, and scikit-learn
+version. Archived generations enable explicit reverified rollback without mutating model
+history. Because joblib has pickle semantics, public-key distribution and private-key
+custody remain trust boundaries.
 
 Missing, unreadable, and incompatible artifacts are normalized to `MlArtifactError`.
 That permanent startup/configuration error is deliberately outside the MQTT/database
@@ -127,7 +131,7 @@ as a healthy database interaction.
 
 Isolation Forest detects statistical rarity, not equipment failure and not causality.
 Handling of late readings at or before the training boundary, labelled outcome evaluation,
-model approval, key rotation, destination-specific alert
+human model approval, key rotation, registry archival policy, destination-specific alert
 escalation policy, backups, retention/compression, managed-service
 infrastructure, and automatic deployment remain explicit future work. PSI indicates
 distribution change, not failure causality or predictive accuracy.
@@ -135,7 +139,8 @@ distribution change, not failure causality or predictive accuracy.
 ## Deployment boundary
 
 The base Kubernetes manifests deploy the consumer, alert dispatcher, simulator,
-monitoring service, model-registry claim, and network policies. They do not embed a broker, database,
+monitoring service, model-registry claim, and network policies. They do not embed a broker,
+database,
 passwords, certificates, private signing keys, or production SQL migration credentials.
 Runtime values come from a ConfigMap and named Secrets; the consumer mounts only the
 model verification public key. The Azure overlay selects an Azure Files CSI storage class
@@ -143,5 +148,6 @@ and an ACR image. Database schema migration remains an explicit release prerequi
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,
-HTTPS port 443, MQTT/TLS port 8883, and PostgreSQL port 5432. Production overlays must narrow destination
+HTTPS port 443, MQTT/TLS port 8883, and PostgreSQL port 5432. Production overlays must
+narrow destination
 CIDRs or use a CNI with FQDN-aware policy. Enforcement also depends on the cluster CNI.

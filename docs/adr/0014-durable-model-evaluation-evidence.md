@@ -15,7 +15,7 @@ retention that the application cannot verify.
 Represent one model evaluation as a transport-neutral, immutable domain record and expose
 persistence through a narrow `ModelEvaluationStore` port. Store each machine result in
 `model_evaluation_runs` before logging it or reporting its gate outcome. Persist the signed
-artifact identity, training boundary, sample count, anomaly rate, per-feature PSI,
+artifact identity and exact SHA-256, training boundary, sample count, anomaly rate, per-feature PSI,
 maximum PSI, pass/fail decision, and stable failed-gate names under a unique evaluation
 UUID.
 
@@ -31,6 +31,7 @@ machine failures and exits unsuccessfully.
 - Gate calculation remains independent of PostgreSQL and can be tested through the port.
 - Release automation cannot accept a result that was only logged but not persisted.
 - Multiple evaluations of the same model remain separate audit events by design.
+- v0.13 uses the exact artifact digest as part of its promotion authorization check.
 - Evidence proves what the configured gates decided; it does not approve or promote a
   model and does not provide labelled accuracy.
 - Retention, archival, access control, and external attestation of audit records remain

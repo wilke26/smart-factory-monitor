@@ -13,6 +13,7 @@ FeaturePsi = tuple[
     Annotated[float, Field(ge=0.0, allow_inf_nan=False)],
 ]
 FailedGate = Literal["minimum_samples", "maximum_anomaly_rate", "maximum_feature_psi"]
+ArtifactSha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
 class ModelEvaluationEvidence(BaseModel):
@@ -23,6 +24,7 @@ class ModelEvaluationEvidence(BaseModel):
     evaluation_id: UUID = Field(default_factory=uuid4)
     evaluated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     model_id: Annotated[str, Field(min_length=1, max_length=255)]
+    artifact_sha256: ArtifactSha256
     machine_id: MachineId
     training_window_end: datetime
     sample_count: Annotated[int, Field(ge=0)]

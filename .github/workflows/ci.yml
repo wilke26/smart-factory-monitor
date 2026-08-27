@@ -60,7 +60,7 @@ jobs:
           grep -q 'smart-factory-alert-dispatcher' /tmp/smart-factory-azure.yaml
           grep -q 'smart-factory-alert-dispatcher' /tmp/smart-factory-base.yaml
       - name: Build application images
-        run: docker compose build simulator consumer alert-dispatcher model-key-init model-trainer model-evaluator
+        run: docker compose build simulator consumer alert-dispatcher model-key-init model-trainer model-evaluator model-promoter model-rollback
       - name: Scan consumer image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -85,8 +85,9 @@ jobs:
           ML_MACHINE_IDS=press-01,press-02 docker compose --profile tools run --rm model-evaluator
           evaluation_count=$(docker compose exec -T timescaledb psql \
             -U smart_factory -d smart_factory -At \
-            -c "SELECT COUNT(*) FROM model_evaluation_runs WHERE passed AND (SELECT COUNT(*) FROM jsonb_object_keys(feature_psi)) = 4")
+            -c "SELECT COUNT(*) FROM model_evaluation_runs WHERE passed AND artifact_sha256 ~ '^[0-9a-f]{64}$' AND (SELECT COUNT(*) FROM jsonb_object_keys(feature_psi)) = 4")
           test "$evaluation_count" = "2"
+          ML_MACHINE_IDS=press-01,press-02 docker compose --profile tools run --rm model-promoter
           docker compose run --rm --no-deps consumer python -c \
             "from pathlib import Path; from smart_factory.infrastructure.ml.registry import MachineModelRegistry; MachineModelRegistry.load(Path('/models'), public_key_path=Path('/run/ml-signing/public/public.pem'))"
           test "$(docker compose exec -T mosquitto sh -c 'find /mosquitto/config-generated -name "*.tmp" -print')" = ""

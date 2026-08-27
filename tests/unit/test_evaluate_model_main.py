@@ -60,7 +60,9 @@ def test_evaluates_each_machine_from_post_training_history(
             training_window_end_datetime=training_window_end,
         ),
     ]
-    detector_load.side_effect = [Mock(artifact=artifact) for artifact in artifacts]
+    detector_load.side_effect = [
+        Mock(artifact=artifact, artifact_sha256="a" * 64) for artifact in artifacts
+    ]
     repository_type.return_value.load_readings_since.side_effect = [[Mock()], [Mock()]]
     evaluator_type.return_value.evaluate.side_effect = [
         Mock(
@@ -90,12 +92,12 @@ def test_evaluates_each_machine_from_post_training_history(
     verifier_from_file.assert_called_once_with(Path("/keys/public.pem"))
     assert detector_load.call_args_list == [
         call(
-            Path("/models/press-01.joblib"),
+            Path("/models/candidates/press-01.joblib"),
             expected_machine_id="press-01",
             verifier=verifier_from_file.return_value,
         ),
         call(
-            Path("/models/press-02.joblib"),
+            Path("/models/candidates/press-02.joblib"),
             expected_machine_id="press-02",
             verifier=verifier_from_file.return_value,
         ),
@@ -114,6 +116,7 @@ def test_evaluates_each_machine_from_post_training_history(
         ("press-01", True),
         ("press-02", True),
     ]
+    assert all(record.artifact_sha256 == "a" * 64 for record in saved)
 
 
 @patch("smart_factory.evaluate_model_main.IsolationForestModelEvaluator")
@@ -129,7 +132,7 @@ def test_reports_all_evaluation_gate_failures_after_closing_repository(
     evaluator_type: Mock,
 ) -> None:
     artifact = Mock(training_window_end_datetime=datetime(2026, 8, 25, tzinfo=UTC))
-    detector_load.return_value = Mock(artifact=artifact)
+    detector_load.return_value = Mock(artifact=artifact, artifact_sha256="a" * 64)
     evaluator_type.return_value.evaluate.return_value = Mock(
         model_id="model",
         machine_id="press-01",
@@ -164,7 +167,8 @@ def test_fails_closed_when_evaluation_evidence_cannot_be_persisted(
     del verifier_from_file
     training_window_end = datetime(2026, 8, 25, tzinfo=UTC)
     detector_load.return_value = Mock(
-        artifact=Mock(training_window_end_datetime=training_window_end)
+        artifact=Mock(training_window_end_datetime=training_window_end),
+        artifact_sha256="a" * 64,
     )
     evaluator_type.return_value.evaluate.return_value = Mock(
         model_id="model",

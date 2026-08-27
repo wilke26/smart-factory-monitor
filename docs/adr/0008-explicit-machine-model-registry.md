@@ -25,3 +25,9 @@ incomplete ML coverage.
 - Machines without an active model still receive deterministic rule evaluation.
 - v0.9 adds detached signatures and verification before deserialization. Model hot reload,
   version promotion, key rotation, evaluation, and drift policy remain out of scope.
+
+## Implementation note (v0.13)
+
+ADR 0015 replaces root-level active files with a strict atomic manifest referencing
+content-addressed signed versions. The explicit machine allowlist and all-or-nothing
+startup invariant remain unchanged.

@@ -39,8 +39,9 @@ def run(settings: Settings, ml_settings: MlSettings) -> None:
         repository.open(timeout=settings.database_connect_timeout_seconds)
         evaluation_store.open(timeout=settings.database_connect_timeout_seconds)
         for machine_id in ml_settings.machine_ids:
+            model_path = Path(ml_settings.model_directory) / "candidates" / f"{machine_id}.joblib"
             detector = IsolationForestAnomalyDetector.load(
-                Path(ml_settings.model_directory) / f"{machine_id}.joblib",
+                model_path,
                 expected_machine_id=machine_id,
                 verifier=verifier,
             )
@@ -58,6 +59,7 @@ def run(settings: Settings, ml_settings: MlSettings) -> None:
             ).evaluate(readings)
             evidence = ModelEvaluationEvidence(
                 model_id=report.model_id,
+                artifact_sha256=detector.artifact_sha256,
                 machine_id=report.machine_id,
                 training_window_end=artifact.training_window_end_datetime,
                 sample_count=report.sample_count,

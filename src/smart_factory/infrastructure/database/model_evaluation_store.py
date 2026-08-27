@@ -13,6 +13,7 @@ INSERT INTO model_evaluation_runs (
     evaluation_id,
     evaluated_at,
     model_id,
+    artifact_sha256,
     machine_id,
     training_window_end,
     sample_count,
@@ -22,12 +23,25 @@ INSERT INTO model_evaluation_runs (
     passed,
     failed_gates
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
+"""
+
+HAS_PASSED_MODEL_EVALUATION = """
+SELECT EXISTS (
+    SELECT 1
+    FROM model_evaluation_runs
+    WHERE machine_id = %s
+      AND model_id = %s
+      AND artifact_sha256 = %s
+      AND passed
+)
 """
 
 
 class CursorLike(Protocol):
     def execute(self, query: str, params: tuple[object, ...]) -> CursorLike: ...
+
+    def fetchone(self) -> tuple[object, ...] | None: ...
 
 
 class ConnectionLike(Protocol):
@@ -88,6 +102,7 @@ class PsycopgModelEvaluationStore:
                     evidence.evaluation_id,
                     evidence.evaluated_at,
                     evidence.model_id,
+                    evidence.artifact_sha256,
                     evidence.machine_id,
                     evidence.training_window_end,
                     evidence.sample_count,
@@ -98,3 +113,18 @@ class PsycopgModelEvaluationStore:
                     list(evidence.failed_gates),
                 ),
             )
+
+    def has_passed(
+        self,
+        *,
+        machine_id: str,
+        model_id: str,
+        artifact_sha256: str,
+    ) -> bool:
+        with self._pool.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                HAS_PASSED_MODEL_EVALUATION,
+                (machine_id, model_id, artifact_sha256),
+            )
+            row = cursor.fetchone()
+        return bool(row and row[0])

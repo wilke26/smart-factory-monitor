@@ -31,5 +31,6 @@ failure status if any gate failed. Do not modify, activate, or promote artifacts
 - PSI detects distribution change but not accuracy, causality, or equipment failure.
 - Late rows at or before the training boundary are excluded from post-training evidence.
 - Format-v1 artifacts are rejected and require explicit retraining.
-- v0.12 persists immutable gate evidence through ADR 0014. Labelled evaluation,
-  immutable promotion, and rollback remain external lifecycle responsibilities.
+- v0.12 persists immutable gate evidence through ADR 0014, and v0.13 binds it to
+  controlled promotion and rollback through ADR 0015. Labelled evaluation and human
+  approval remain external lifecycle responsibilities.

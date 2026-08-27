@@ -24,6 +24,7 @@ from smart_factory.infrastructure.ml.artifact_signing import (
     ArtifactSigner,
     ArtifactSigningError,
     ArtifactVerifier,
+    artifact_bytes_sha256,
     artifact_signature_path,
 )
 
@@ -237,12 +238,17 @@ class IsolationForestTrainer:
 class IsolationForestAnomalyDetector:
     """Run inference from a trusted, versioned Isolation Forest artifact."""
 
-    def __init__(self, artifact: IsolationForestArtifact) -> None:
+    def __init__(self, artifact: IsolationForestArtifact, artifact_sha256: str) -> None:
         self._artifact = artifact
+        self._artifact_sha256 = artifact_sha256
 
     @property
     def artifact(self) -> IsolationForestArtifact:
         return self._artifact
+
+    @property
+    def artifact_sha256(self) -> str:
+        return self._artifact_sha256
 
     @classmethod
     def load(
@@ -251,9 +257,13 @@ class IsolationForestAnomalyDetector:
         *,
         expected_machine_id: str,
         verifier: ArtifactVerifier,
+        expected_artifact_sha256: str | None = None,
     ) -> IsolationForestAnomalyDetector:
         try:
             serialized = path.read_bytes()
+            digest = artifact_bytes_sha256(serialized)
+            if expected_artifact_sha256 is not None and digest != expected_artifact_sha256:
+                raise ArtifactSigningError("model artifact digest does not match registry")
             signature = artifact_signature_path(path).read_bytes()
             verifier.verify(serialized, signature)
         except (OSError, ArtifactSigningError) as error:
@@ -269,7 +279,7 @@ class IsolationForestAnomalyDetector:
                     "ML artifact machine does not match configured machine: "
                     f"expected {expected_machine_id}, got {artifact.machine_id}"
                 )
-            return cls(artifact)
+            return cls(artifact, digest)
         except MlArtifactError:
             raise
         except Exception as error:

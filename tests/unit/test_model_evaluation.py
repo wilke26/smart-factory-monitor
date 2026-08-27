@@ -12,6 +12,7 @@ def evidence(**updates: object) -> ModelEvaluationEvidence:
         "evaluation_id": UUID("11111111-1111-1111-1111-111111111111"),
         "evaluated_at": datetime(2026, 8, 26, tzinfo=UTC),
         "model_id": "isolation-forest-2026-08-25",
+        "artifact_sha256": "a" * 64,
         "machine_id": "press-01",
         "training_window_end": datetime(2026, 8, 25, tzinfo=UTC),
         "sample_count": 120,

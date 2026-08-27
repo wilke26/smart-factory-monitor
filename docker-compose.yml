@@ -232,6 +232,51 @@ services:
       - ml-models:/models:ro
       - ml-signing-public:/run/ml-signing/public:ro
 
+  model-promoter:
+    build:
+      context: .
+      args:
+        PROJECT_INSTALL: ".[ml]"
+    command: ["smart-factory-promote-model"]
+    profiles: ["tools"]
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      model-key-init:
+        condition: service_completed_successfully
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://smart_factory:smart_factory_dev@timescaledb:5432/smart_factory}
+      DATABASE_POOL_MIN_SIZE: ${DATABASE_POOL_MIN_SIZE:-1}
+      DATABASE_POOL_MAX_SIZE: ${DATABASE_POOL_MAX_SIZE:-4}
+      DATABASE_CONNECT_TIMEOUT_SECONDS: ${DATABASE_CONNECT_TIMEOUT_SECONDS:-10.0}
+      ML_MODEL_DIRECTORY: ${ML_MODEL_DIRECTORY:-/models}
+      ML_MACHINE_IDS: ${ML_MACHINE_IDS:-press-01}
+      ML_SIGNATURE_PUBLIC_KEY_PATH: /run/ml-signing/public/public.pem
+    volumes:
+      - ml-models:/models
+      - ml-signing-public:/run/ml-signing/public:ro
+
+  model-rollback:
+    build:
+      context: .
+      args:
+        PROJECT_INSTALL: ".[ml]"
+    command: ["smart-factory-rollback-model"]
+    profiles: ["tools"]
+    depends_on:
+      model-key-init:
+        condition: service_completed_successfully
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ML_MODEL_DIRECTORY: ${ML_MODEL_DIRECTORY:-/models}
+      ML_MACHINE_IDS: ${ML_MACHINE_IDS:-press-01}
+      ML_SIGNATURE_PUBLIC_KEY_PATH: /run/ml-signing/public/public.pem
+      ML_ROLLBACK_GENERATION_ID: ${ML_ROLLBACK_GENERATION_ID:-}
+    volumes:
+      - ml-models:/models
+      - ml-signing-public:/run/ml-signing/public:ro
+
   alert-dispatcher:
     build:
       context: .

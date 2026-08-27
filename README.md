@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.12.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.13.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -23,9 +23,10 @@ deployable, lease-based dispatcher. v0.11.1 treats a concurrently replaced or ex
 dispatcher lease as an expected delivery outcome, logs it without sensitive error text,
 and continues processing the remaining batch. v0.12 persists every signed post-training
 model-evaluation result as immutable, queryable audit evidence before reporting success or
-gate failure.
+gate failure. v0.13 binds that evidence to the exact signed artifact and adds explicit,
+atomic multi-machine promotion plus generation-based rollback.
 
-There is intentionally no HTTP API, online learning, or automatic model promotion yet.
+There is intentionally no HTTP API, online learning, or automatic model promotion.
 
 ## Quick start
 
@@ -200,22 +201,24 @@ After at least 100 readings for every configured training machine have been coll
 docker compose --profile tools run --rm model-trainer
 ```
 
-After a separate post-training window has arrived, evaluate it before an external
-promotion decision and only then restart the consumer with the approved registry:
+After a separate post-training window has arrived, evaluate and explicitly promote the
+complete candidate set before restarting the consumer with the approved registry:
 
 ```bash
 docker compose --profile tools run --rm model-evaluator
+docker compose --profile tools run --rm model-promoter
 ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
 ```
 
-The comma-separated `ML_MACHINE_IDS` setting controls both the training batch and the
-active registry. The trainer writes `<machine_id>.joblib` and a detached
-`<machine_id>.joblib.sig` for each configured machine to the shared `ml-models` volume. It
-signs the exact serialized bytes with Ed25519 and publishes the signature and artifact
-using atomic replacement. With ML enabled, the consumer requires every configured pair,
-verifies the signature before any joblib/pickle deserialization, and then validates the
-filename-to-machine mapping, artifact format, feature order, machine identity, estimator
-type, and exact scikit-learn runtime version. Extra stale files are not activated.
+The comma-separated `ML_MACHINE_IDS` setting controls training, evaluation, promotion,
+and the active registry. The trainer writes `<machine_id>.joblib` and its detached
+signature below `candidates/`; these files are never active. Evaluation stores the exact
+candidate SHA-256 with its gate result. Promotion requires a passed result for the same
+machine, model ID, and digest, then publishes signed content-addressed versions and
+atomically replaces `active.json` for the complete batch. With ML enabled, the consumer
+loads only that manifest, verifies every digest and signature before joblib/pickle
+deserialization, and then validates artifact format, feature order, machine identity,
+estimator type, and exact scikit-learn runtime version. Extra files are not activated.
 An enabled consumer fails fast with a dedicated artifact error if the model is missing,
 unreadable, or invalid; permanent model configuration failures never enter the
 infrastructure retry loop.
@@ -225,24 +228,34 @@ The evaluator verifies the signed artifact, loads only readings with timestamps 
 recorded `training_window_end`, and fails unless the bounded window meets all configured gates: minimum
 sample count, maximum predicted anomaly rate, and maximum per-feature PSI. Its structured
 `ml_model_evaluated` log contains the complete result for each machine. The same result is
-stored in `model_evaluation_runs`, including its evaluation UUID, artifact identity,
+stored in `model_evaluation_runs`, including its evaluation UUID, artifact identity and digest,
 training boundary, sample count, anomaly rate, per-feature PSI, decision, and failed gates.
-A successful evaluation is evidence for an external promotion decision; the command never
-activates, copies, or replaces a deployed model.
+A successful evaluation authorizes the separate promotion command for those exact bytes;
+the evaluator itself never activates, copies, or replaces a deployed model.
 
 ```sql
-SELECT evaluated_at, machine_id, model_id, passed, failed_gates
+SELECT evaluated_at, machine_id, model_id, artifact_sha256, passed, failed_gates
 FROM model_evaluation_runs
 ORDER BY evaluated_at DESC;
+```
+
+Every active manifest is archived under `manifests/<generation-id>.json`. Roll back by
+supplying an explicit earlier generation; rollback revalidates every referenced digest
+and signature and activates a new generation without modifying history:
+
+```bash
+ML_ROLLBACK_GENERATION_ID=<generation-uuid> \
+  docker compose --profile tools run --rm model-rollback
+ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
 ```
 
 The artifact still uses joblib/pickle semantics. Signature verification prevents an
 untrusted or corrupted file from reaching the unsafe deserializer, provided the public
 verification key is distributed through a trusted channel and the signing private key
 remains restricted to the trainer. Signing proves provenance and integrity; evaluation
-adds quality evidence, but neither is an approval workflow. Immutable versioned
-promotion and rollback remain production-hardening work. Durable evaluation evidence is
-an audit trail, not an approval. v0.9 format-v1 artifacts must be retrained for v0.10.
+adds quality evidence, but neither is human approval. Versioned promotion and rollback
+are explicit operator actions. Durable evaluation evidence is an audit trail, not an
+approval. v0.9 format-v1 artifacts must be retrained for v0.10.
 
 ## Telemetry contract
 
@@ -300,7 +313,7 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `ANOMALY_MAX_POWER_KW` | `30.0` | High-power threshold |
 | `ANOMALY_MIN_PRODUCTION_RATE` | `25` | Low-production threshold |
 | `ML_ANOMALY_DETECTION_ENABLED` | `false` | Enable model loading and inference |
-| `ML_MODEL_DIRECTORY` | `/models` | Trusted machine-model registry directory |
+| `ML_MODEL_DIRECTORY` | `/models` | Candidate, versioned, and active model-registry root |
 | `ML_MACHINE_IDS` | `press-01` | Comma-separated machines trained and activated |
 | `ML_CONTAMINATION` | `0.05` | Expected anomaly fraction during training |
 | `ML_MINIMUM_TRAINING_SAMPLES` | `100` | Minimum history required to train |
@@ -374,12 +387,12 @@ kubectl kustomize deploy/kubernetes/overlays/azure >/tmp/smart-factory-azure.yam
 Tests cover the contract, configuration, application service, observability, MQTT callbacks,
 valid/invalid ingestion pipelines, rule boundaries, model training/inference, pre-load
 signature verification, post-training anomaly/PSI gates, atomic idempotent persistence,
-durable evaluation evidence, transactional alert creation, leased retry delivery, real webhook requests, and
+durable evaluation evidence, approval-gated atomic promotion, generation rollback,
+transactional alert creation, leased retry delivery, real webhook requests, and
 property-based JSON round trips. CI checks Python 3.12 and 3.13, audits dependencies,
-renders Kubernetes policy,
-scans the built consumer image, exercises a denied broker topic, trains, evaluates, and
-reloads signed models in Docker, runs the complete Compose ingestion path, and enforces at least
-80% branch-aware coverage.
+renders Kubernetes policy, scans the built consumer image, exercises a denied broker
+topic, trains, evaluates, promotes, and reloads signed models in Docker, runs the complete
+Compose ingestion path, and enforces at least 80% branch-aware coverage.
 
 Run the services outside Docker with a reachable broker:
 
@@ -408,12 +421,13 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0012: post-training model evaluation gates](docs/adr/0012-post-training-model-evaluation-gates.md)
 - [ADR 0013: transactional alert outbox](docs/adr/0013-transactional-alert-outbox.md)
 - [ADR 0014: durable model-evaluation evidence](docs/adr/0014-durable-model-evaluation-evidence.md)
+- [ADR 0015: atomic model promotion and rollback](docs/adr/0015-atomic-model-promotion-and-rollback.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-Future versions can add retention/compression policies, immutable
-image/model promotion, backup/restore tests, and
+Future versions can add retention/compression policies, immutable image promotion,
+backup/restore tests, human model-approval integration, registry archival policy, and
 infrastructure-as-code for managed dependencies. Local Compose remains a development
 environment rather than a production deployment.

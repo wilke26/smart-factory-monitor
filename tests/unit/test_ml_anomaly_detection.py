@@ -9,6 +9,7 @@ from smart_factory.domain.telemetry import TelemetryReading
 from smart_factory.infrastructure.ml.artifact_signing import (
     ArtifactSigner,
     ArtifactVerifier,
+    artifact_sha256,
     artifact_signature_path,
 )
 from smart_factory.infrastructure.ml.isolation_forest import (
@@ -64,6 +65,7 @@ def test_trains_loads_and_detects_multivariate_outlier(
     assert artifact.training_window_end_datetime == readings[-1].timestamp
     assert model_path.exists()
     assert artifact_signature_path(model_path).is_file()
+    assert detector.artifact_sha256 == artifact_sha256(model_path)
     assert len(findings) == 1
     assert findings[0].rule_id == "ml-isolation-forest"
     assert findings[0].observed_value < 0

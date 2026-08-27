@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -23,6 +24,16 @@ class ArtifactSigningError(ValueError):
 def artifact_signature_path(artifact_path: Path) -> Path:
     """Return the detached-signature path for one model artifact."""
     return artifact_path.with_name(f"{artifact_path.name}{SIGNATURE_SUFFIX}")
+
+
+def artifact_sha256(artifact_path: Path) -> str:
+    """Return the lowercase SHA-256 identity of exact artifact bytes."""
+    return artifact_bytes_sha256(artifact_path.read_bytes())
+
+
+def artifact_bytes_sha256(payload: bytes) -> str:
+    """Return the lowercase SHA-256 identity of an in-memory artifact."""
+    return sha256(payload).hexdigest()
 
 
 class ArtifactSigner:

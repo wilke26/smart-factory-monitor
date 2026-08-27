@@ -5,6 +5,7 @@ from uuid import UUID
 
 from smart_factory.domain.model_evaluation import ModelEvaluationEvidence
 from smart_factory.infrastructure.database.model_evaluation_store import (
+    HAS_PASSED_MODEL_EVALUATION,
     INSERT_MODEL_EVALUATION,
     PsycopgModelEvaluationStore,
 )
@@ -22,6 +23,7 @@ def evidence() -> ModelEvaluationEvidence:
         evaluation_id=UUID("11111111-1111-1111-1111-111111111111"),
         evaluated_at=datetime(2026, 8, 26, tzinfo=UTC),
         model_id="model-1",
+        artifact_sha256="a" * 64,
         machine_id="press-01",
         training_window_end=datetime(2026, 8, 25, tzinfo=UTC),
         sample_count=120,
@@ -51,14 +53,32 @@ def test_persists_complete_evaluation_evidence() -> None:
 
     query, params = cursor.execute.call_args.args
     assert query == INSERT_MODEL_EVALUATION
-    assert params[:7] == (
+    assert params[:8] == (
         record.evaluation_id,
         record.evaluated_at,
         "model-1",
+        "a" * 64,
         "press-01",
         record.training_window_end,
         120,
         0.05,
     )
-    assert json.loads(params[7]) == {"temperature_c": 0.1, "power_kw": 0.2}
-    assert params[8:] == (0.2, False, ["maximum_feature_psi"])
+    assert json.loads(params[8]) == {"temperature_c": 0.1, "power_kw": 0.2}
+    assert params[9:] == (0.2, False, ["maximum_feature_psi"])
+
+
+def test_checks_passed_evidence_by_exact_artifact_identity() -> None:
+    store, _, cursor = store_with_pool()
+    cursor.fetchone.return_value = (True,)
+
+    approved = store.has_passed(
+        machine_id="press-01",
+        model_id="model-1",
+        artifact_sha256="a" * 64,
+    )
+
+    cursor.execute.assert_called_once_with(
+        HAS_PASSED_MODEL_EVALUATION,
+        ("press-01", "model-1", "a" * 64),
+    )
+    assert approved is True

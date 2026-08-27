@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smart-factory-monitor"
-version = "0.12.0"
+version = "0.13.0"
 description = "A Smart Factory telemetry pipeline with explainable rule-based and multivariate ML anomaly detection."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -40,6 +40,8 @@ smart-factory-simulator = "smart_factory.main:main"
 smart-factory-consumer = "smart_factory.consumer_main:main"
 smart-factory-train-model = "smart_factory.train_model_main:main"
 smart-factory-evaluate-model = "smart_factory.evaluate_model_main:main"
+smart-factory-promote-model = "smart_factory.promote_model_main:main"
+smart-factory-rollback-model = "smart_factory.rollback_model_main:main"
 smart-factory-generate-model-key = "smart_factory.generate_model_key_main:main"
 smart-factory-alert-dispatcher = "smart_factory.alert_dispatcher_main:main"
 

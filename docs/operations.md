@@ -74,14 +74,15 @@ change after the source-level base pin.
 
 The offline evaluator emits one structured `ml_model_evaluated` event per configured
 machine. It includes bounded sample count, anomaly rate, per-feature PSI, maximum PSI,
-pass/fail status, and stable failed-gate names. The same immutable record is committed to
+pass/fail status, stable failed-gate names, and the exact artifact SHA-256. The same
+immutable record is committed to
 `model_evaluation_runs` before the log is emitted. The process exits unsuccessfully after
-all machines are reported if any gate fails, so release automation can stop before an
-external promotion step. The evidence table is separate from the online Prometheus
+all machines are reported if any gate fails, so release automation can stop before the
+explicit promotion step. The evidence table is separate from the online Prometheus
 endpoint and deliberately records failed as well as successful evaluations.
 
 ```sql
-SELECT machine_id, evaluated_at, model_id, passed, failed_gates
+SELECT machine_id, evaluated_at, model_id, artifact_sha256, passed, failed_gates
 FROM model_evaluation_runs
 ORDER BY evaluated_at DESC;
 ```
@@ -125,5 +126,5 @@ backoff; dead-letter policy and destination-specific escalation remain deploymen
 
 A shared or production environment still needs managed broker ACL provisioning and secret
 rotation, backup/restore tests, alert rules, durable metric collection, migration rollback
-policy, alert dead-letter/escalation policy, TimescaleDB retention/compression, and approved
-immutable model promotion with key rotation.
+policy, alert dead-letter/escalation policy, TimescaleDB retention/compression, human model
+approval integration, registry-generation retention, and signing-key rotation.

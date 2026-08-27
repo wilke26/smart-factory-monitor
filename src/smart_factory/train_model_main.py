@@ -47,7 +47,7 @@ def run(settings: Settings, ml_settings: MlSettings) -> None:
             signer=signer,
         )
         for machine_id, readings in training_sets.items():
-            model_path = Path(ml_settings.model_directory) / f"{machine_id}.joblib"
+            model_path = Path(ml_settings.model_directory) / "candidates" / f"{machine_id}.joblib"
             artifact = trainer.train(readings, model_path)
             LOGGER.info(
                 "ml_model_trained",

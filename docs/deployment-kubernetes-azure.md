@@ -87,8 +87,10 @@ registry is mounted read-only by the consumer but must remain writable by contro
 operations. It requests 100 GiB to match current Premium Azure Files provisioning bounds.
 
 The signing private key is intentionally absent from the application manifests. A
-controlled external training/promotion job must hold it, publish both `.joblib` and
-`.joblib.sig`, and never place the private key in the shared model claim. The consumer
+controlled external training job must hold it and publish signed candidates. A separate
+promotion job needs database evidence, the public key, and write access to publish
+content-addressed versions plus the active manifest. Never place the private key in the
+shared model claim. The consumer
 mounts only the public-key Secret.
 
 The alert dispatcher reads its webhook endpoint and retry policy from the generated
@@ -121,5 +123,5 @@ curl --fail http://127.0.0.1:8000/metrics
 
 Production rollout still needs endpoint-specific network destinations, managed broker ACL
 creation, certificate/credential/signing-key rotation, schema-migration automation,
-backups, durable metrics and alert escalation policy, and an approved immutable
-model-promotion workflow.
+backups, durable metrics and alert escalation policy, human model approval, registry
+generation retention, and signing-key rotation.

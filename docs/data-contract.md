@@ -65,8 +65,18 @@ proportions for these exact features. They are evaluation metadata, not telemetr
 ## Model-evaluation evidence contract
 
 Each evaluator run stores one immutable `model_evaluation_runs` row per machine. It
-contains `evaluation_id`, `evaluated_at`, `model_id`, `machine_id`,
+contains `evaluation_id`, `evaluated_at`, `model_id`, `artifact_sha256`, `machine_id`,
 `training_window_end`, `sample_count`, `anomaly_rate`, a JSON object of per-feature PSI,
 `maximum_feature_psi`, `passed`, and the stable `failed_gates` array. Timestamps require a
 UTC offset, probabilities are finite and bounded, feature names are unique, the maximum
 must match the feature values, and `passed` is true exactly when `failed_gates` is empty.
+Rows created before v0.13 can have a null digest after the non-destructive migration and
+never authorize promotion; rerun evaluation against the current candidate to bind it.
+
+## Active model-registry contract
+
+`active.json` is a strict schema-v1 manifest with a generation UUID, timestamp, optional
+previous and rollback-source generations, and one unique entry per machine. Each entry
+binds `machine_id`, signed `model_id`, and the lowercase SHA-256 of the exact artifact
+bytes. The referenced path is derived from these validated values rather than accepted
+from the manifest. A generation becomes visible through one atomic manifest replacement.

@@ -71,3 +71,8 @@ For v0.12, automated checks cover strict evaluation-evidence invariants, complet
 mapping, bounded database-pool lifecycle, fail-closed persistence, successful and failed
 gate history, migration constraints, and a Compose/TimescaleDB assertion that both
 machine-specific CI evaluations were stored with all four feature PSI values.
+
+For v0.13, generated lifecycle code was tested against byte-level identity and failure
+boundaries: an unevaluated or changed candidate rejects the whole batch, immutable model
+versions are published before one atomic manifest switch, inference rechecks the digest,
+and rollback creates a new generation only after revalidating archived files.
