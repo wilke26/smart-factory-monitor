@@ -149,8 +149,8 @@ BACKUP_ID=manual-2026-08-27 RESTORE_DATABASE_NAME=smart_factory_restore \
 docker compose --profile recovery run --rm recovery-model-verifier
 ```
 
-CI performs this drill and compares telemetry, anomaly, alert, evaluation, and migration
-row counts. The local workflow is proof of recoverability, not a production backup service.
+CI performs this drill and compares telemetry, anomaly, alert, evaluation, operator-audit,
+and migration row counts. The local workflow is proof of recoverability, not a production backup service.
 Production still requires encrypted off-site copies, access logging, scheduled execution,
 retention and deletion rules, RPO/RTO targets, periodic drills, and provider-specific
 point-in-time recovery. Private signing-key recovery remains a separate security process.
@@ -162,10 +162,10 @@ rotation, managed backup scheduling and off-site retention, alert rules, durable
 policy, alert dead-letter/escalation policy, TimescaleDB retention/compression, human model
 approval integration, registry-generation retention, and signing-key rotation.
 
-It also needs a tamper-evident, durable audit trail for privileged operator actions. At a
-minimum, promotion, rollback, key rotation, and security-relevant configuration changes
-must record the authenticated actor or service principal, reason or ticket reference,
-correlation ID, timestamp, previous and resulting state, and outcome. Production design
-must define append-only or externally attested storage, authorization, query access,
-retention, archival, and deletion policy. Structured runtime logs and the existing durable
-model-evaluation evidence support this work but do not replace that audit trail.
+v0.15 provides a database-enforced append-only and hash-chained audit trail for model
+promotion and rollback. It records actor, reason, correlation ID, timestamp, previous and
+resulting state, outcome, and bounded failure type; `smart-factory-verify-audit` recomputes
+the complete chain. Production must still authenticate the asserted actor upstream,
+restrict database ownership, export or externally attest the chain, define authorization,
+query access, retention, archival, and deletion policy, and add event types for key
+rotation and security-relevant configuration changes.

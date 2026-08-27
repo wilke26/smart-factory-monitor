@@ -4,6 +4,7 @@ from smart_factory.infrastructure.database.alert_outbox import PsycopgAlertOutbo
 from smart_factory.infrastructure.database.model_evaluation_store import (
     PsycopgModelEvaluationStore,
 )
+from smart_factory.infrastructure.database.operator_audit import PsycopgOperatorAuditTrail
 from smart_factory.infrastructure.database.telemetry_repository import (
     PsycopgTelemetryRepository,
 )
@@ -11,5 +12,6 @@ from smart_factory.infrastructure.database.telemetry_repository import (
 __all__ = [
     "PsycopgAlertOutbox",
     "PsycopgModelEvaluationStore",
+    "PsycopgOperatorAuditTrail",
     "PsycopgTelemetryRepository",
 ]

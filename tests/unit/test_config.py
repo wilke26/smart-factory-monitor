@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from smart_factory.config import AlertSettings, MlSettings, MqttSecuritySettings, Settings
+from smart_factory.config import (
+    AlertSettings,
+    MlSettings,
+    MqttSecuritySettings,
+    OperatorAuditSettings,
+    Settings,
+)
 from smart_factory.domain.anomaly import AnomalySeverity
 
 
@@ -428,3 +434,46 @@ def test_rejects_invalid_alert_configuration(
 
     with pytest.raises(ValueError, match=message):
         AlertSettings.from_env()
+
+
+def test_reads_explicit_operator_audit_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUDIT_ACTOR", "release-bot")
+    monkeypatch.setenv("AUDIT_REASON", "ticket-123")
+    monkeypatch.setenv("AUDIT_CORRELATION_ID", "11111111-1111-1111-1111-111111111111")
+
+    settings = OperatorAuditSettings.from_env()
+
+    assert settings.actor == "release-bot"
+    assert settings.context.reason == "ticket-123"
+    assert str(settings.correlation_id) == "11111111-1111-1111-1111-111111111111"
+
+
+@pytest.mark.parametrize(
+    ("missing_name", "message"),
+    [
+        ("AUDIT_ACTOR", "AUDIT_ACTOR is required"),
+        ("AUDIT_REASON", "AUDIT_REASON is required"),
+        ("AUDIT_CORRELATION_ID", "AUDIT_CORRELATION_ID is required"),
+    ],
+)
+def test_requires_complete_operator_audit_context(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_name: str,
+    message: str,
+) -> None:
+    monkeypatch.setenv("AUDIT_ACTOR", "release-bot")
+    monkeypatch.setenv("AUDIT_REASON", "ticket-123")
+    monkeypatch.setenv("AUDIT_CORRELATION_ID", "11111111-1111-1111-1111-111111111111")
+    monkeypatch.delenv(missing_name)
+
+    with pytest.raises(ValueError, match=message):
+        OperatorAuditSettings.from_env()
+
+
+def test_rejects_invalid_audit_correlation_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUDIT_ACTOR", "release-bot")
+    monkeypatch.setenv("AUDIT_REASON", "ticket-123")
+    monkeypatch.setenv("AUDIT_CORRELATION_ID", "not-a-uuid")
+
+    with pytest.raises(ValueError, match="must be a UUID"):
+        OperatorAuditSettings.from_env()

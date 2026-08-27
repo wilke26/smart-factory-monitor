@@ -96,6 +96,9 @@ After every configured candidate passes evaluation, promote the complete set:
 
 ```bash
 ML_MACHINE_IDS=press-01,press-02 \
+AUDIT_ACTOR=<trusted-identity> \
+AUDIT_REASON=<ticket-or-reason> \
+AUDIT_CORRELATION_ID=<uuid> \
   docker compose --profile tools run --rm model-promoter
 ```
 
@@ -110,6 +113,9 @@ set by explicitly selecting its archived generation:
 
 ```bash
 ML_ROLLBACK_GENERATION_ID=<generation-uuid> \
+AUDIT_ACTOR=<trusted-identity> \
+AUDIT_REASON=<ticket-or-reason> \
+AUDIT_CORRELATION_ID=<uuid> \
   docker compose --profile tools run --rm model-rollback
 ```
 
@@ -117,12 +123,40 @@ Rollback revalidates every digest and signature and creates a new active generat
 `source_generation_id` records the selected history entry. Restart the consumer after a
 promotion or rollback; it deliberately does not hot-reload registry state.
 
+## Privileged-operation audit
+
+Promotion and rollback require complete audit context. The command first appends a
+`started` event and stops before touching the registry if that write fails. It then appends
+`succeeded` with the previous and resulting generation or `failed` with a bounded error
+type. An unmatched `started` event identifies a crashed or partially completed operation
+that needs reconciliation.
+
+The PostgreSQL table rejects updates and deletes through a trigger. Writers take a
+transaction-scoped advisory lock and bind every canonical event to the previous SHA-256,
+so concurrent writers have one order and later mutation is detectable. Verify the chain
+independently with:
+
+```bash
+docker compose --profile tools run --rm audit-verifier
+```
+
+```sql
+SELECT sequence_number, occurred_at, actor, reason, correlation_id,
+       action, outcome, previous_state, resulting_state, error_type
+FROM operator_audit_events
+ORDER BY sequence_number;
+```
+
+The local command accepts an asserted `AUDIT_ACTOR`; it does not authenticate that value.
+Production release automation must inject an identity derived from its authenticated
+operator or workload and restrict direct database ownership. External attestation,
+retention, archival, query authorization, and audit events for key rotation and security
+configuration remain deployment work.
+
 ## Remaining controls
 
 The local registry is not a production model platform. Signatures establish integrity
 and provenance under the configured key. The offline gates provide post-training
 distribution evidence but not labelled accuracy or human approval. Approval integration,
-generation retention, key rotation, registry distribution, and a tamper-evident operator
-audit trail remain explicit future work. That audit trail must bind promotion and rollback
-to an authenticated actor or service principal, reason or ticket, correlation ID, affected
-generation IDs, outcome, and a defined retention and access policy.
+generation retention, key rotation, registry distribution, external audit attestation,
+and a defined retention and access policy remain explicit future work.

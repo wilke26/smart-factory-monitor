@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
 from smart_factory.application.ports.alerts import AlertLeaseLostError, ClaimedAlert
 from smart_factory.domain.alert import AnomalyAlert
 from smart_factory.domain.anomaly import AnomalySeverity
+from smart_factory.infrastructure.database._pool import ConnectionPoolLike, create_pool
 
 CLAIM_ALERTS = """
 WITH pending AS (
@@ -70,42 +70,12 @@ WHERE machine_id = %s
 """
 
 
-class CursorLike(Protocol):
-    rowcount: int
-
-    def execute(self, query: str, params: tuple[object, ...]) -> CursorLike: ...
-
-    def fetchall(self) -> list[tuple[object, ...]]: ...
-
-
-class ConnectionLike(Protocol):
-    def cursor(self) -> AbstractContextManager[CursorLike]: ...
-
-
-class ConnectionPoolLike(Protocol):
-    def open(self, *, wait: bool = False, timeout: float = 30.0) -> None: ...
-
-    def connection(self) -> AbstractContextManager[ConnectionLike]: ...
-
-    def close(self) -> None: ...
-
-
 def _create_pool(database_url: str, *, min_size: int, max_size: int) -> ConnectionPoolLike:
-    from psycopg_pool import ConnectionPool
-
-    return cast(
-        ConnectionPoolLike,
-        cast(
-            Any,
-            ConnectionPool(
-                database_url,
-                min_size=min_size,
-                max_size=max_size,
-                open=False,
-                check=ConnectionPool.check_connection,
-                name="alert-outbox-pool",
-            ),
-        ),
+    return create_pool(
+        database_url,
+        min_size=min_size,
+        max_size=max_size,
+        name="alert-outbox-pool",
     )
 
 

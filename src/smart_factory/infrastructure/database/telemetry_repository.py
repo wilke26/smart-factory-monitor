@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import AbstractContextManager
 from datetime import datetime
-from typing import Any, Protocol, cast
+from typing import Any, cast
 from uuid import NAMESPACE_URL, uuid5
 
 from smart_factory.application.ports.telemetry import TelemetryIdentityConflictError
 from smart_factory.domain.anomaly import AnomalyFinding
 from smart_factory.domain.telemetry import TelemetryReading
+from smart_factory.infrastructure.database._pool import ConnectionPoolLike, create_pool
 
 INSERT_TELEMETRY = """
 INSERT INTO telemetry_readings (
@@ -97,42 +97,13 @@ WHERE machine_id = %s AND recorded_at = %s
 """
 
 
-class CursorLike(Protocol):
-    rowcount: int
-
-    def execute(self, query: str, params: tuple[object, ...]) -> CursorLike: ...
-
-    def executemany(self, query: str, params_seq: list[tuple[object, ...]]) -> None: ...
-
-    def fetchall(self) -> list[tuple[object, ...]]: ...
-
-    def fetchone(self) -> tuple[object, ...] | None: ...
-
-
-class ConnectionLike(Protocol):
-    def cursor(self) -> AbstractContextManager[CursorLike]: ...
-
-
-class ConnectionPoolLike(Protocol):
-    def open(self, *, wait: bool = False, timeout: float = 30.0) -> None: ...
-
-    def connection(self) -> AbstractContextManager[ConnectionLike]: ...
-
-    def close(self) -> None: ...
-
-
 def _create_pool(database_url: str, *, min_size: int, max_size: int) -> ConnectionPoolLike:
-    from psycopg_pool import ConnectionPool
-
-    pool = ConnectionPool(
+    return create_pool(
         database_url,
         min_size=min_size,
         max_size=max_size,
-        open=False,
-        check=ConnectionPool.check_connection,
         name="telemetry-pool",
     )
-    return cast(ConnectionPoolLike, cast(Any, pool))
 
 
 class PsycopgTelemetryRepository:

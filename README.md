@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.14.1** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.15.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -28,7 +28,9 @@ atomic multi-machine promotion plus generation-based rollback. v0.14 adds checks
 versioned database-and-model backup bundles and a non-destructive recovery drill that
 restores only into isolated targets and verifies the recovered signed registry.
 v0.14.1 restores TimescaleDB in its required restore mode and defers foreign-key
-validation until hypertable restoration is complete.
+validation until hypertable restoration is complete. v0.15 records model promotion and
+rollback as fail-closed, append-only operator events whose SHA-256 chain can be verified
+independently.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -210,7 +212,8 @@ complete candidate set before restarting the consumer with the approved registry
 
 ```bash
 docker compose --profile tools run --rm model-evaluator
-docker compose --profile tools run --rm model-promoter
+AUDIT_ACTOR=<trusted-identity> AUDIT_REASON=<ticket-or-reason> \
+AUDIT_CORRELATION_ID=<uuid> docker compose --profile tools run --rm model-promoter
 ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
 ```
 
@@ -249,6 +252,8 @@ and signature and activates a new generation without modifying history:
 
 ```bash
 ML_ROLLBACK_GENERATION_ID=<generation-uuid> \
+AUDIT_ACTOR=<trusted-identity> AUDIT_REASON=<ticket-or-reason> \
+AUDIT_CORRELATION_ID=<uuid> \
   docker compose --profile tools run --rm model-rollback
 ML_ANOMALY_DETECTION_ENABLED=true docker compose up -d --force-recreate consumer
 ```
@@ -260,6 +265,17 @@ remains restricted to the trainer. Signing proves provenance and integrity; eval
 adds quality evidence, but neither is human approval. Versioned promotion and rollback
 are explicit operator actions. Durable evaluation evidence is an audit trail, not an
 approval. v0.9 format-v1 artifacts must be retrained for v0.10.
+
+Promotion and rollback write a `started` event before any registry mutation and then a
+`succeeded` or `failed` event. The database rejects updates and deletes, while every row
+binds the previous hash to the canonical event content. Verify the complete chain with:
+
+```bash
+docker compose --profile tools run --rm audit-verifier
+```
+
+`AUDIT_ACTOR` is an asserted identity. Production automation must derive it from an
+authenticated workload or operator context rather than accepting arbitrary user input.
 
 ## Backup and recovery drill
 
@@ -361,6 +377,9 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `ML_MAX_FEATURE_PSI` | `0.25` | Highest accepted PSI for any feature |
 | `ML_SIGNATURE_PUBLIC_KEY_PATH` | empty | Required Ed25519 public key for ML inference |
 | `ML_SIGNING_PRIVATE_KEY_PATH` | empty | Required Ed25519 private key for offline training |
+| `AUDIT_ACTOR` | empty | Required trusted identity for promotion and rollback |
+| `AUDIT_REASON` | empty | Required reason or ticket for the privileged operation |
+| `AUDIT_CORRELATION_ID` | empty | Required operation correlation UUID |
 | `ALERT_WEBHOOK_URL` | empty | Verified HTTPS destination; empty disables alert outbox creation |
 | `ALERT_WEBHOOK_ALLOW_INSECURE_HTTP` | `false` | Development-only opt-in for plain HTTP |
 | `ALERT_WEBHOOK_BEARER_TOKEN` | empty | Optional dispatcher-only bearer credential |
@@ -428,6 +447,7 @@ Tests cover the contract, configuration, application service, observability, MQT
 valid/invalid ingestion pipelines, rule boundaries, model training/inference, pre-load
 signature verification, post-training anomaly/PSI gates, atomic idempotent persistence,
 durable evaluation evidence, approval-gated atomic promotion, generation rollback,
+fail-closed hash-chained operator auditing,
 transactional alert creation, leased retry delivery, real webhook requests, and
 property-based JSON round trips. CI also creates and checksum-verifies a database/model
 backup, restores it into isolated targets, compares persisted evidence, and loads the
@@ -465,6 +485,7 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0014: durable model-evaluation evidence](docs/adr/0014-durable-model-evaluation-evidence.md)
 - [ADR 0015: atomic model promotion and rollback](docs/adr/0015-atomic-model-promotion-and-rollback.md)
 - [ADR 0016: verifiable isolated recovery drills](docs/adr/0016-verifiable-isolated-recovery-drills.md)
+- [ADR 0017: hash-chained operator audit trail](docs/adr/0017-hash-chained-operator-audit-trail.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
@@ -472,10 +493,6 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 
 Future versions can add retention/compression policies, immutable image promotion,
 production backup scheduling and off-site retention, human model-approval integration,
-registry archival policy, and
-infrastructure-as-code for managed dependencies. A production-wide, tamper-evident audit
-trail is also planned for privileged operator actions such as model promotion, rollback,
-key rotation, and configuration changes. It must record the authenticated actor, reason or
-ticket, correlation ID, previous and resulting state, timestamp, and enforce defined access
-and retention policies. Local Compose remains a development environment rather than a
-production deployment.
+registry archival policy, key-rotation and configuration-change audit events, external
+audit attestation, and infrastructure-as-code for managed dependencies. Local Compose
+remains a development environment rather than a production deployment.

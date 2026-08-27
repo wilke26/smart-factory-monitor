@@ -87,3 +87,9 @@ For v0.14.1, the GitHub Actions failure was reproduced with one telemetry row an
 foreign-keyed anomaly finding. Regression verification covers TimescaleDB pre/post restore
 mode, deferred foreign-key validation, restoration of the referenced hypertable row, and
 the cleanup path that restores normal TimescaleDB operation after a failed first pass.
+
+For v0.15, tests cover strict operator context, immutable audit contracts, serialized
+writers, deterministic hash chaining, mutation rejection, chain verification, fail-closed
+promotion and rollback attempts, terminal success/failure evidence, and recovery of the
+audit table. The shared database-pool factory was extracted while adding the fourth
+database adapter so pool behavior remains defined in one place.

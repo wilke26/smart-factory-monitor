@@ -6,8 +6,10 @@ from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from smart_factory.domain.anomaly import AnomalySeverity
+from smart_factory.domain.operator_audit import OperatorAuditContext
 
 _MACHINE_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -249,6 +251,40 @@ class AlertSettings:
             ca_cert_path=ca_cert_path,
             allow_insecure_http=allow_insecure_http,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorAuditSettings:
+    """Explicit operator identity and justification for privileged commands."""
+
+    actor: str
+    reason: str
+    correlation_id: UUID
+
+    @property
+    def context(self) -> OperatorAuditContext:
+        return OperatorAuditContext(
+            actor=self.actor,
+            reason=self.reason,
+            correlation_id=self.correlation_id,
+        )
+
+    @classmethod
+    def from_env(cls) -> "OperatorAuditSettings":
+        actor = os.getenv("AUDIT_ACTOR", "").strip()
+        reason = os.getenv("AUDIT_REASON", "").strip()
+        raw_correlation_id = os.getenv("AUDIT_CORRELATION_ID", "").strip()
+        if not actor:
+            raise ValueError("AUDIT_ACTOR is required for privileged operations")
+        if not reason:
+            raise ValueError("AUDIT_REASON is required for privileged operations")
+        if not raw_correlation_id:
+            raise ValueError("AUDIT_CORRELATION_ID is required for privileged operations")
+        try:
+            correlation_id = UUID(raw_correlation_id)
+        except ValueError as error:
+            raise ValueError("AUDIT_CORRELATION_ID must be a UUID") from error
+        return cls(actor=actor, reason=reason, correlation_id=correlation_id)
 
 
 @dataclass(frozen=True, slots=True)

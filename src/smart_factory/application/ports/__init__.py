@@ -12,6 +12,7 @@ from smart_factory.application.ports.model_evaluation import (
     ModelEvaluationStore,
 )
 from smart_factory.application.ports.model_registry import ModelRegistryPublisher
+from smart_factory.application.ports.operator_audit import OperatorAuditTrail
 from smart_factory.application.ports.telemetry import TelemetryHandler, TelemetryRepository
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "ModelApprovalReader",
     "ModelEvaluationStore",
     "ModelRegistryPublisher",
+    "OperatorAuditTrail",
     "TelemetryHandler",
     "TelemetryRepository",
 ]

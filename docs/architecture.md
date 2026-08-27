@@ -1,4 +1,4 @@
-# Architecture v0.14.1
+# Architecture v0.15.0
 
 ## Scope
 
@@ -15,6 +15,8 @@ Version 0.14 packages the database, model registry, and verification public key 
 checksummed recovery bundle and proves restoration against isolated targets in CI.
 Version 0.14.1 orders TimescaleDB restoration so hypertable keys are created in restore
 mode and application foreign keys are validated only after `timescaledb_post_restore()`.
+Version 0.15 makes model promotion and rollback fail closed on an append-only,
+hash-chained operator audit trail and adds independent chain verification.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -30,8 +32,9 @@ post-training telemetry → model-evaluator                              ▲
                                ├── model_evaluation_runs + SHA-256     │
                                ▼                                       │
                         model-promoter → signed versions ← rollback    │
-                               │                                       │
-                               └── atomic active.json ──────────────────┘
+                               │                 │                     │
+                               ├── atomic active.json ──────────────────┘
+                               └── operator_audit_events hash chain
 
 application service → one transaction → telemetry_readings + anomaly_findings
                                                + alert outbox
@@ -55,10 +58,11 @@ quiesced writers → pg_dump + model registry + public key → checksummed backu
   registry manifests, rollback, validation, and machine-aware inference dispatch.
 - `infrastructure.database` supplies atomic telemetry/outbox persistence, leased alert
   claims, delivery-state transitions, bounded historical reads, and immutable model
-  evaluation evidence.
+  evaluation evidence plus serialized, hash-chained operator events.
 - `infrastructure.alerts` owns verified webhook transport.
 - `consumer_main`, `alert_dispatcher_main`, `train_model_main`, `evaluate_model_main`,
-  `promote_model_main`, and `rollback_model_main` are separate composition roots.
+  `promote_model_main`, `rollback_model_main`, and `verify_audit_main` are separate
+  composition roots.
 - Containerized recovery adapters own PostgreSQL dump/restore and filesystem packaging;
   they do not enter the online application dependency graph.
 

@@ -1,9 +1,10 @@
 from pathlib import Path
 from unittest.mock import Mock, call, patch
+from uuid import UUID
 
 import pytest
 
-from smart_factory.config import MlSettings
+from smart_factory.config import MlSettings, OperatorAuditSettings
 from smart_factory.promote_model_main import run
 
 
@@ -28,8 +29,17 @@ def runtime_settings() -> Mock:
     )
 
 
+def audit_settings() -> OperatorAuditSettings:
+    return OperatorAuditSettings(
+        actor="release-bot",
+        reason="ticket-123",
+        correlation_id=UUID("11111111-1111-1111-1111-111111111111"),
+    )
+
+
 @patch("smart_factory.promote_model_main.ModelPromotionService")
 @patch("smart_factory.promote_model_main.FilesystemModelRegistryPublisher")
+@patch("smart_factory.promote_model_main.PsycopgOperatorAuditTrail")
 @patch("smart_factory.promote_model_main.PsycopgModelEvaluationStore")
 @patch("smart_factory.promote_model_main.IsolationForestAnomalyDetector.load")
 @patch("smart_factory.promote_model_main.ArtifactVerifier.from_public_key_file")
@@ -37,6 +47,7 @@ def test_promotes_verified_candidates_and_closes_store(
     verifier_from_file: Mock,
     detector_load: Mock,
     store_type: Mock,
+    audit_type: Mock,
     publisher_type: Mock,
     service_type: Mock,
 ) -> None:
@@ -50,7 +61,7 @@ def test_promotes_verified_candidates_and_closes_store(
         entries=(Mock(machine_id="press-01"), Mock(machine_id="press-02")),
     )
 
-    run(runtime_settings(), ml_settings())
+    run(runtime_settings(), ml_settings(), audit_settings())
 
     assert detector_load.call_args_list == [
         call(
@@ -66,6 +77,8 @@ def test_promotes_verified_candidates_and_closes_store(
     ]
     store_type.return_value.open.assert_called_once_with(timeout=10)
     store_type.return_value.close.assert_called_once()
+    audit_type.return_value.open.assert_called_once_with(timeout=10)
+    audit_type.return_value.close.assert_called_once()
     publisher_type.assert_called_once_with(Path("/models"), verifier_from_file.return_value)
     promoted = service_type.return_value.promote.call_args.args[0]
     assert [(item.machine_id, item.model_id, item.artifact_sha256) for item in promoted] == [
@@ -76,6 +89,7 @@ def test_promotes_verified_candidates_and_closes_store(
 
 @patch("smart_factory.promote_model_main.ModelPromotionService")
 @patch("smart_factory.promote_model_main.FilesystemModelRegistryPublisher")
+@patch("smart_factory.promote_model_main.PsycopgOperatorAuditTrail")
 @patch("smart_factory.promote_model_main.PsycopgModelEvaluationStore")
 @patch("smart_factory.promote_model_main.IsolationForestAnomalyDetector.load")
 @patch("smart_factory.promote_model_main.ArtifactVerifier.from_public_key_file")
@@ -83,6 +97,7 @@ def test_closes_store_when_promotion_fails(
     verifier_from_file: Mock,
     detector_load: Mock,
     store_type: Mock,
+    audit_type: Mock,
     publisher_type: Mock,
     service_type: Mock,
 ) -> None:
@@ -91,9 +106,10 @@ def test_closes_store_when_promotion_fails(
     service_type.return_value.promote.side_effect = RuntimeError("not approved")
 
     with pytest.raises(RuntimeError, match="not approved"):
-        run(runtime_settings(), ml_settings())
+        run(runtime_settings(), ml_settings(), audit_settings())
 
     store_type.return_value.close.assert_called_once()
+    audit_type.return_value.close.assert_called_once()
 
 
 def test_requires_public_verification_key_before_candidate_access() -> None:
@@ -108,4 +124,4 @@ def test_requires_public_verification_key_before_candidate_access() -> None:
     )
 
     with pytest.raises(ValueError, match="ML_SIGNATURE_PUBLIC_KEY_PATH is required"):
-        run(runtime_settings(), settings)
+        run(runtime_settings(), settings, audit_settings())

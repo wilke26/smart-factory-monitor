@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-from contextlib import AbstractContextManager
-from typing import Any, Protocol, cast
 
 from smart_factory.domain.model_evaluation import ModelEvaluationEvidence
+from smart_factory.infrastructure.database._pool import ConnectionPoolLike, create_pool
 
 INSERT_MODEL_EVALUATION = """
 INSERT INTO model_evaluation_runs (
@@ -38,40 +37,12 @@ SELECT EXISTS (
 """
 
 
-class CursorLike(Protocol):
-    def execute(self, query: str, params: tuple[object, ...]) -> CursorLike: ...
-
-    def fetchone(self) -> tuple[object, ...] | None: ...
-
-
-class ConnectionLike(Protocol):
-    def cursor(self) -> AbstractContextManager[CursorLike]: ...
-
-
-class ConnectionPoolLike(Protocol):
-    def open(self, *, wait: bool = False, timeout: float = 30.0) -> None: ...
-
-    def connection(self) -> AbstractContextManager[ConnectionLike]: ...
-
-    def close(self) -> None: ...
-
-
 def _create_pool(database_url: str, *, min_size: int, max_size: int) -> ConnectionPoolLike:
-    from psycopg_pool import ConnectionPool
-
-    return cast(
-        ConnectionPoolLike,
-        cast(
-            Any,
-            ConnectionPool(
-                database_url,
-                min_size=min_size,
-                max_size=max_size,
-                open=False,
-                check=ConnectionPool.check_connection,
-                name="model-evaluation-pool",
-            ),
-        ),
+    return create_pool(
+        database_url,
+        min_size=min_size,
+        max_size=max_size,
+        name="model-evaluation-pool",
     )
 
 
