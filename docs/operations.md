@@ -139,7 +139,9 @@ BACKUP_ID=manual-2026-08-27 \
 Restore rejects checksum failures, mismatched metadata, unsafe archive paths, and attempts
 to use the active database name. It creates an isolated database and replaces only the
 dedicated recovery volumes. The normal registry loader then authenticates and validates
-the restored models:
+the restored models. Database restoration follows the TimescaleDB lifecycle: it enables
+restore mode, restores everything except foreign keys, leaves restore mode, and only then
+validates the deferred foreign keys against the completed hypertables:
 
 ```bash
 BACKUP_ID=manual-2026-08-27 RESTORE_DATABASE_NAME=smart_factory_restore \

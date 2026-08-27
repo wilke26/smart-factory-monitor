@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.14.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.14.1** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -27,6 +27,8 @@ gate failure. v0.13 binds that evidence to the exact signed artifact and adds ex
 atomic multi-machine promotion plus generation-based rollback. v0.14 adds checksummed,
 versioned database-and-model backup bundles and a non-destructive recovery drill that
 restores only into isolated targets and verifies the recovered signed registry.
+v0.14.1 restores TimescaleDB in its required restore mode and defers foreign-key
+validation until hypertable restoration is complete.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 

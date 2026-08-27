@@ -71,8 +71,39 @@ if tar --list --verbose --gzip --file="$backup_directory/model-registry.tar.gz" 
   exit 1
 fi
 
+# TimescaleDB must recreate hypertable keys while restoring mode is active, but PostgreSQL
+# can validate foreign keys that reference those hypertables only after post_restore. Keep
+# the original TOC ordering and defer only FK CONSTRAINT entries to a second pass.
+pg_restore -l "$backup_directory/database.dump" > /tmp/restore-full.list
+awk '/ FK CONSTRAINT / { print ";" $0; next } { print }' \
+  /tmp/restore-full.list > /tmp/restore-without-fk.list
+awk '/^;/ { print; next } / FK CONSTRAINT / { print; next } { print ";" $0 }' \
+  /tmp/restore-full.list > /tmp/restore-fk-only.list
+
 dropdb --host=timescaledb --username="$database_user" --if-exists --force "$restore_database"
 createdb --host=timescaledb --username="$database_user" "$restore_database"
+
+psql_restore() {
+  psql --host=timescaledb --username="$database_user" \
+    --dbname="$restore_database" -v ON_ERROR_STOP=1 "$@"
+}
+
+restore_prepared=false
+finish_restore() {
+  status=$?
+  trap - EXIT
+  if [ "$restore_prepared" = true ]; then
+    if ! psql_restore -c "SELECT timescaledb_post_restore();"; then
+      status=1
+    fi
+  fi
+  exit "$status"
+}
+trap finish_restore EXIT
+
+psql_restore -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+psql_restore -c "SELECT timescaledb_pre_restore();"
+restore_prepared=true
 pg_restore \
   --host=timescaledb \
   --username="$database_user" \
@@ -80,7 +111,21 @@ pg_restore \
   --exit-on-error \
   --no-owner \
   --no-acl \
+  --use-list=/tmp/restore-without-fk.list \
   "$backup_directory/database.dump"
+psql_restore -c "SELECT timescaledb_post_restore();"
+restore_prepared=false
+pg_restore \
+  --host=timescaledb \
+  --username="$database_user" \
+  --dbname="$restore_database" \
+  --exit-on-error \
+  --no-owner \
+  --no-acl \
+  --use-list=/tmp/restore-fk-only.list \
+  "$backup_directory/database.dump"
+psql_restore -c "ANALYZE;"
+trap - EXIT
 
 find /restored-models -mindepth 1 -delete
 find /restored-model-signing-public -mindepth 1 -delete

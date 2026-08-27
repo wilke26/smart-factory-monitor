@@ -43,3 +43,12 @@ compatibility checks.
 - Production deployments still need encrypted off-site storage, access control, retention,
   scheduled execution, restore objectives, managed-database procedures, and separate
   private-key disaster recovery.
+
+## Implementation note (v0.14.1)
+
+TimescaleDB hypertable constraints must be recreated while `timescaledb_pre_restore()` is
+active, while application foreign keys that reference restored hypertable rows must be
+validated after `timescaledb_post_restore()`. The restore therefore preserves the dump TOC
+ordering but performs two passes: all non-foreign-key entries in restore mode, followed by
+only foreign-key entries in normal mode. The exit trap always calls `post_restore` if the
+first pass fails, so a failed drill cannot leave TimescaleDB background workers disabled.

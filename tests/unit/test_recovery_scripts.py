@@ -54,3 +54,14 @@ def test_recovery_script_rejects_unsafe_input(
 
     assert result.returncode == 2
     assert message in result.stderr
+
+
+def test_restore_defers_foreign_keys_until_after_timescale_restore_mode() -> None:
+    source = (PROJECT_ROOT / "docker" / "recovery" / "restore-backup.sh").read_text()
+
+    pre_restore = source.index("SELECT timescaledb_pre_restore()")
+    main_restore = source.index("--use-list=/tmp/restore-without-fk.list")
+    post_restore = source.index("SELECT timescaledb_post_restore();", pre_restore)
+    foreign_keys = source.index("--use-list=/tmp/restore-fk-only.list")
+
+    assert pre_restore < main_restore < post_restore < foreign_keys

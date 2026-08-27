@@ -1,4 +1,4 @@
-# Architecture v0.14.0
+# Architecture v0.14.1
 
 ## Scope
 
@@ -13,6 +13,8 @@ Version 0.13 binds that evidence to exact candidate bytes and separates training
 evaluation, atomic promotion, active inference, and rollback into explicit lifecycle steps.
 Version 0.14 packages the database, model registry, and verification public key into a
 checksummed recovery bundle and proves restoration against isolated targets in CI.
+Version 0.14.1 orders TimescaleDB restoration so hypertable keys are created in restore
+mode and application foreign keys are validated only after `timescaledb_post_restore()`.
 
 ```text
 Offline ML lifecycle                              Online telemetry path

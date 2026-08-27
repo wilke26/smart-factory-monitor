@@ -82,3 +82,8 @@ checksums, mismatched metadata, traversal paths, links, and special archive file
 creates a real database-and-model bundle after the full ingestion and ML lifecycle,
 restores it into isolated targets, compares all application evidence-table counts and
 migration history, and loads the recovered registry through normal signature validation.
+
+For v0.14.1, the GitHub Actions failure was reproduced with one telemetry row and one
+foreign-keyed anomaly finding. Regression verification covers TimescaleDB pre/post restore
+mode, deferred foreign-key validation, restoration of the referenced hypertable row, and
+the cleanup path that restores normal TimescaleDB operation after a failed first pass.
