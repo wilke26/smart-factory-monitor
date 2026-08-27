@@ -116,4 +116,7 @@ promotion or rollback; it deliberately does not hot-reload registry state.
 The local registry is not a production model platform. Signatures establish integrity
 and provenance under the configured key. The offline gates provide post-training
 distribution evidence but not labelled accuracy or human approval. Approval integration,
-generation retention, key rotation, and registry distribution remain explicit future work.
+generation retention, key rotation, registry distribution, and a tamper-evident operator
+audit trail remain explicit future work. That audit trail must bind promotion and rollback
+to an authenticated actor or service principal, reason or ticket, correlation ID, affected
+generation IDs, outcome, and a defined retention and access policy.

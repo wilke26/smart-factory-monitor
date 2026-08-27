@@ -128,3 +128,11 @@ A shared or production environment still needs managed broker ACL provisioning a
 rotation, backup/restore tests, alert rules, durable metric collection, migration rollback
 policy, alert dead-letter/escalation policy, TimescaleDB retention/compression, human model
 approval integration, registry-generation retention, and signing-key rotation.
+
+It also needs a tamper-evident, durable audit trail for privileged operator actions. At a
+minimum, promotion, rollback, key rotation, and security-relevant configuration changes
+must record the authenticated actor or service principal, reason or ticket reference,
+correlation ID, timestamp, previous and resulting state, and outcome. Production design
+must define append-only or externally attested storage, authorization, query access,
+retention, archival, and deletion policy. Structured runtime logs and the existing durable
+model-evaluation evidence support this work but do not replace that audit trail.

@@ -429,5 +429,9 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 
 Future versions can add retention/compression policies, immutable image promotion,
 backup/restore tests, human model-approval integration, registry archival policy, and
-infrastructure-as-code for managed dependencies. Local Compose remains a development
-environment rather than a production deployment.
+infrastructure-as-code for managed dependencies. A production-wide, tamper-evident audit
+trail is also planned for privileged operator actions such as model promotion, rollback,
+key rotation, and configuration changes. It must record the authenticated actor, reason or
+ticket, correlation ID, previous and resulting state, timestamp, and enforce defined access
+and retention policies. Local Compose remains a development environment rather than a
+production deployment.
