@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.13.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.14.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -24,7 +24,9 @@ dispatcher lease as an expected delivery outcome, logs it without sensitive erro
 and continues processing the remaining batch. v0.12 persists every signed post-training
 model-evaluation result as immutable, queryable audit evidence before reporting success or
 gate failure. v0.13 binds that evidence to the exact signed artifact and adds explicit,
-atomic multi-machine promotion plus generation-based rollback.
+atomic multi-machine promotion plus generation-based rollback. v0.14 adds checksummed,
+versioned database-and-model backup bundles and a non-destructive recovery drill that
+restores only into isolated targets and verifies the recovered signed registry.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -257,6 +259,39 @@ adds quality evidence, but neither is human approval. Versioned promotion and ro
 are explicit operator actions. Durable evaluation evidence is an audit trail, not an
 approval. v0.9 format-v1 artifacts must be retrained for v0.10.
 
+## Backup and recovery drill
+
+The recovery profile backs up the complete PostgreSQL database, model registry, and model
+verification public key. Stop database and model writers before creating a coordinated
+bundle; the database dump itself uses a consistent PostgreSQL snapshot.
+
+```bash
+docker compose stop consumer simulator alert-dispatcher
+BACKUP_ID=manual-2026-08-27 \
+  docker compose --profile recovery run --rm backup-create
+```
+
+The bundle is written below `BACKUP_DIRECTORY` (`./backups` by default) only after every
+payload exists. It contains format metadata and SHA-256 checksums. It deliberately excludes
+all service credentials and the signing private key, which requires separate protected
+disaster recovery.
+
+A recovery drill verifies the bundle before restoring. The target database must differ
+from the active database, and models are written only to dedicated recovery volumes:
+
+```bash
+BACKUP_ID=manual-2026-08-27 RESTORE_DATABASE_NAME=smart_factory_restore \
+  docker compose --profile recovery run --rm backup-restore
+docker compose --profile recovery run --rm recovery-model-verifier
+docker compose exec timescaledb psql \
+  -U smart_factory -d smart_factory_restore \
+  -c 'SELECT COUNT(*) FROM telemetry_readings;'
+```
+
+This proves that the local artifacts can be restored without replacing live state. A
+production runbook must additionally define encrypted off-site storage, scheduling,
+retention, access control, RPO/RTO, managed-database recovery, and private-key custody.
+
 ## Telemetry contract
 
 ```json
@@ -338,6 +373,9 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `MONITORING_HOST` | `0.0.0.0` | Monitoring listener inside the consumer container |
 | `MONITORING_PORT` | `8000` | Monitoring listener port |
 | `MONITORING_HOST_PORT` | `8000` | Loopback-only Compose host port |
+| `BACKUP_DIRECTORY` | `./backups` | Ignored host directory for versioned recovery bundles |
+| `BACKUP_ID` | empty | Explicit safe identifier for backup and restore commands |
+| `RESTORE_DATABASE_NAME` | `smart_factory_restore` | Isolated database created by a recovery drill |
 
 > The local Mosquitto configuration requires separate simulator and consumer credentials
 > and restricts both identities with topic ACLs, but it remains unencrypted and uses
@@ -389,7 +427,9 @@ valid/invalid ingestion pipelines, rule boundaries, model training/inference, pr
 signature verification, post-training anomaly/PSI gates, atomic idempotent persistence,
 durable evaluation evidence, approval-gated atomic promotion, generation rollback,
 transactional alert creation, leased retry delivery, real webhook requests, and
-property-based JSON round trips. CI checks Python 3.12 and 3.13, audits dependencies,
+property-based JSON round trips. CI also creates and checksum-verifies a database/model
+backup, restores it into isolated targets, compares persisted evidence, and loads the
+recovered signed registry. CI checks Python 3.12 and 3.13, audits dependencies,
 renders Kubernetes policy, scans the built consumer image, exercises a denied broker
 topic, trains, evaluates, promotes, and reloads signed models in Docker, runs the complete
 Compose ingestion path, and enforces at least 80% branch-aware coverage.
@@ -422,13 +462,15 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0013: transactional alert outbox](docs/adr/0013-transactional-alert-outbox.md)
 - [ADR 0014: durable model-evaluation evidence](docs/adr/0014-durable-model-evaluation-evidence.md)
 - [ADR 0015: atomic model promotion and rollback](docs/adr/0015-atomic-model-promotion-and-rollback.md)
+- [ADR 0016: verifiable isolated recovery drills](docs/adr/0016-verifiable-isolated-recovery-drills.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
 Future versions can add retention/compression policies, immutable image promotion,
-backup/restore tests, human model-approval integration, registry archival policy, and
+production backup scheduling and off-site retention, human model-approval integration,
+registry archival policy, and
 infrastructure-as-code for managed dependencies. A production-wide, tamper-evident audit
 trail is also planned for privileged operator actions such as model promotion, rollback,
 key rotation, and configuration changes. It must record the authenticated actor, reason or

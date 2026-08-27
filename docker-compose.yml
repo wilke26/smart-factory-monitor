@@ -277,6 +277,65 @@ services:
       - ml-models:/models
       - ml-signing-public:/run/ml-signing/public:ro
 
+  backup-create:
+    image: timescale/timescaledb:2.29.0-pg16@sha256:d8336a5c9cc49bdbf1e935234e8c87ab64b6d6d195fd2ecedff7b00185557631
+    profiles: ["recovery"]
+    restart: "no"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-smart_factory_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-smart_factory}
+      POSTGRES_DB: ${POSTGRES_DB:-smart_factory}
+      BACKUP_ID: ${BACKUP_ID:-}
+      BACKUP_DIRECTORY: /backups
+    volumes:
+      - ./docker/recovery/create-backup.sh:/create-backup.sh:ro
+      - ${BACKUP_DIRECTORY:-./backups}:/backups
+      - ml-models:/models:ro
+      - ml-signing-public:/model-signing-public:ro
+    command: ["sh", "/create-backup.sh"]
+
+  backup-restore:
+    image: timescale/timescaledb:2.29.0-pg16@sha256:d8336a5c9cc49bdbf1e935234e8c87ab64b6d6d195fd2ecedff7b00185557631
+    profiles: ["recovery"]
+    restart: "no"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-smart_factory_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-smart_factory}
+      POSTGRES_DB: ${POSTGRES_DB:-smart_factory}
+      BACKUP_ID: ${BACKUP_ID:-}
+      BACKUP_DIRECTORY: /backups
+      RESTORE_DATABASE_NAME: ${RESTORE_DATABASE_NAME:-smart_factory_restore}
+    volumes:
+      - ./docker/recovery/restore-backup.sh:/restore-backup.sh:ro
+      - ${BACKUP_DIRECTORY:-./backups}:/backups:ro
+      - ml-models-restored:/restored-models
+      - ml-signing-public-restored:/restored-model-signing-public
+    command: ["sh", "/restore-backup.sh"]
+
+  recovery-model-verifier:
+    build:
+      context: .
+      args:
+        PROJECT_INSTALL: ".[ml]"
+    profiles: ["recovery"]
+    restart: "no"
+    command:
+      - python
+      - -c
+      - >-
+        from pathlib import Path;
+        from smart_factory.infrastructure.ml.registry import MachineModelRegistry;
+        MachineModelRegistry.load(Path('/restored-models'), public_key_path=Path('/restored-model-signing-public/public.pem'))
+    volumes:
+      - ml-models-restored:/restored-models:ro
+      - ml-signing-public-restored:/restored-model-signing-public:ro
+
   alert-dispatcher:
     build:
       context: .
@@ -315,3 +374,5 @@ volumes:
   ml-models:
   ml-signing-private:
   ml-signing-public:
+  ml-models-restored:
+  ml-signing-public-restored:

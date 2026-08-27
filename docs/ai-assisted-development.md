@@ -76,3 +76,9 @@ For v0.13, generated lifecycle code was tested against byte-level identity and f
 boundaries: an unevaluated or changed candidate rejects the whole batch, immutable model
 versions are published before one atomic manifest switch, inference rechecks the digest,
 and rollback creates a new generation only after revalidating archived files.
+
+For v0.14, recovery tooling rejects unsafe identifiers, active-database targets, corrupt
+checksums, mismatched metadata, traversal paths, links, and special archive files. CI
+creates a real database-and-model bundle after the full ingestion and ML lifecycle,
+restores it into isolated targets, compares all application evidence-table counts and
+migration history, and loads the recovered registry through normal signature validation.

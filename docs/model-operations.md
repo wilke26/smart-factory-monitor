@@ -43,6 +43,12 @@ and distribute the public key through the deployment secret system. Key compromi
 intentional rotation requires a new pair, re-signing approved artifacts, and coordinated
 consumer rollout. The command reuses a valid matching pair rather than rotating it.
 
+The v0.14 recovery bundle includes the signed registry and its public verification key but
+intentionally excludes this private key. A successful registry recovery therefore proves
+that existing active models can still be authenticated and loaded; it does not prove that
+new models can be signed. Test private-key disaster recovery independently under the key-
+management policy.
+
 ## Coverage signals
 
 `smart_factory_ml_models_loaded` reports the active registry size.

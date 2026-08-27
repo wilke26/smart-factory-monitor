@@ -1,4 +1,4 @@
-# Architecture v0.13.0
+# Architecture v0.14.0
 
 ## Scope
 
@@ -11,6 +11,8 @@ Version 0.12 adds an outbound model-evaluation store so release evidence survive
 one-shot evaluator process without coupling gate calculation to PostgreSQL.
 Version 0.13 binds that evidence to exact candidate bytes and separates training,
 evaluation, atomic promotion, active inference, and rollback into explicit lifecycle steps.
+Version 0.14 packages the database, model registry, and verification public key into a
+checksummed recovery bundle and proves restoration against isolated targets in CI.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -34,6 +36,11 @@ application service → one transaction → telemetry_readings + anomaly_finding
                                                        │
                                                        ▼
                                       alert-dispatcher → HTTPS webhook
+
+quiesced writers → pg_dump + model registry + public key → checksummed backup bundle
+                                                                  │
+                                                                  ▼
+                              isolated recovery database + volumes → verification
 ```
 
 ## Dependency direction
@@ -50,6 +57,8 @@ application service → one transaction → telemetry_readings + anomaly_finding
 - `infrastructure.alerts` owns verified webhook transport.
 - `consumer_main`, `alert_dispatcher_main`, `train_model_main`, `evaluate_model_main`,
   `promote_model_main`, and `rollback_model_main` are separate composition roots.
+- Containerized recovery adapters own PostgreSQL dump/restore and filesystem packaging;
+  they do not enter the online application dependency graph.
 
 The real-time application service sees only the detector protocol. It neither imports
 scikit-learn nor decides whether ML is enabled.
@@ -132,7 +141,7 @@ as a healthy database interaction.
 Isolation Forest detects statistical rarity, not equipment failure and not causality.
 Handling of late readings at or before the training boundary, labelled outcome evaluation,
 human model approval, key rotation, registry archival policy, destination-specific alert
-escalation policy, backups, retention/compression, managed-service
+escalation policy, production backup scheduling/off-site retention, retention/compression, managed-service
 infrastructure, and automatic deployment remain explicit future work. PSI indicates
 distribution change, not failure causality or predictive accuracy.
 

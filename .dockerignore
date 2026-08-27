@@ -12,5 +12,6 @@ dist
 build
 output
 _to_delete
+backups
 tests
 docs

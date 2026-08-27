@@ -60,7 +60,7 @@ jobs:
           grep -q 'smart-factory-alert-dispatcher' /tmp/smart-factory-azure.yaml
           grep -q 'smart-factory-alert-dispatcher' /tmp/smart-factory-base.yaml
       - name: Build application images
-        run: docker compose build simulator consumer alert-dispatcher model-key-init model-trainer model-evaluator model-promoter model-rollback
+        run: docker compose build simulator consumer alert-dispatcher model-key-init model-trainer model-evaluator model-promoter model-rollback recovery-model-verifier
       - name: Scan consumer image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -127,6 +127,31 @@ jobs:
             sleep 1
           done
           test "$alert_count" -gt 0
+          docker compose stop consumer simulator
+          source_reading_count=$(docker compose exec -T timescaledb psql \
+            -U smart_factory -d smart_factory -At \
+            -c "SELECT COUNT(*) FROM telemetry_readings")
+          source_finding_count=$(docker compose exec -T timescaledb psql \
+            -U smart_factory -d smart_factory -At \
+            -c "SELECT COUNT(*) FROM anomaly_findings")
+          source_alert_count=$(docker compose exec -T timescaledb psql \
+            -U smart_factory -d smart_factory -At \
+            -c "SELECT COUNT(*) FROM anomaly_alert_outbox")
+          source_evaluation_count=$(docker compose exec -T timescaledb psql \
+            -U smart_factory -d smart_factory -At \
+            -c "SELECT COUNT(*) FROM model_evaluation_runs")
+          source_migration_count=$(docker compose exec -T timescaledb psql \
+            -U smart_factory -d smart_factory -At \
+            -c "SELECT COUNT(*) FROM schema_migrations")
+          BACKUP_ID=ci-roundtrip docker compose --profile recovery run --rm backup-create
+          BACKUP_ID=ci-roundtrip RESTORE_DATABASE_NAME=smart_factory_restore \
+            docker compose --profile recovery run --rm backup-restore
+          test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c 'SELECT COUNT(*) FROM telemetry_readings')" = "$source_reading_count"
+          test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c 'SELECT COUNT(*) FROM anomaly_findings')" = "$source_finding_count"
+          test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c 'SELECT COUNT(*) FROM anomaly_alert_outbox')" = "$source_alert_count"
+          test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c 'SELECT COUNT(*) FROM model_evaluation_runs')" = "$source_evaluation_count"
+          test "$(docker compose exec -T timescaledb psql -U smart_factory -d smart_factory_restore -At -c 'SELECT COUNT(*) FROM schema_migrations')" = "$source_migration_count"
+          ML_MACHINE_IDS=press-01,press-02 docker compose --profile recovery run --rm recovery-model-verifier
       - name: Stop Compose services
         if: always()
         run: docker compose down -v

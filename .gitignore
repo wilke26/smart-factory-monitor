@@ -16,6 +16,7 @@ dist/
 build/
 output/
 _to_delete/
+backups/
 docker/mosquitto/data/*
 docker/mosquitto/log/*
 !docker/mosquitto/data/.gitkeep

@@ -122,10 +122,41 @@ verified, redirects are rejected, and bearer credentials belong only to the disp
 `ALERT_REQUEST_TIMEOUT_SECONDS`. Persistent failures retry indefinitely with capped
 backoff; dead-letter policy and destination-specific escalation remain deployment choices.
 
+## Backup and isolated restore
+
+The `recovery` Compose profile creates a private, versioned bundle containing a PostgreSQL
+custom dump, the model registry, its public verification key, metadata, and SHA-256
+checksums. Quiesce the consumer, simulator, dispatcher, trainer, promoter, and rollback
+tool before backup so the database snapshot and filesystem registry describe one operator-
+selected point. Never copy the signing private key into this bundle.
+
+```bash
+docker compose stop consumer simulator alert-dispatcher
+BACKUP_ID=manual-2026-08-27 \
+  docker compose --profile recovery run --rm backup-create
+```
+
+Restore rejects checksum failures, mismatched metadata, unsafe archive paths, and attempts
+to use the active database name. It creates an isolated database and replaces only the
+dedicated recovery volumes. The normal registry loader then authenticates and validates
+the restored models:
+
+```bash
+BACKUP_ID=manual-2026-08-27 RESTORE_DATABASE_NAME=smart_factory_restore \
+  docker compose --profile recovery run --rm backup-restore
+docker compose --profile recovery run --rm recovery-model-verifier
+```
+
+CI performs this drill and compares telemetry, anomaly, alert, evaluation, and migration
+row counts. The local workflow is proof of recoverability, not a production backup service.
+Production still requires encrypted off-site copies, access logging, scheduled execution,
+retention and deletion rules, RPO/RTO targets, periodic drills, and provider-specific
+point-in-time recovery. Private signing-key recovery remains a separate security process.
+
 ## Remaining production work
 
 A shared or production environment still needs managed broker ACL provisioning and secret
-rotation, backup/restore tests, alert rules, durable metric collection, migration rollback
+rotation, managed backup scheduling and off-site retention, alert rules, durable metric collection, migration rollback
 policy, alert dead-letter/escalation policy, TimescaleDB retention/compression, human model
 approval integration, registry-generation retention, and signing-key rotation.
 
