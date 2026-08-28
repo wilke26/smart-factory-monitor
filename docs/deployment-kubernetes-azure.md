@@ -66,7 +66,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.18.0 \
+  --image smart-factory-monitor:0.19.0 \
   --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \
@@ -93,6 +93,11 @@ lookup and verify it in the release record. The renderer rejects a tag, validate
 digest syntax, and fails unless consumer, simulator, and alert dispatcher are all bound
 to the exact same immutable reference. Never apply the mutable-tag overlay as the
 production release artifact.
+
+When enabled for a public or Enterprise Cloud repository, the v0.19 GitHub attestation
+covers the Python wheel, source archive, and release manifest, not a separately built
+container image. A future registry publication flow must bind the container digest to its
+own provenance before admission policy treats it as verified.
 
 For an ABAC-enabled ACR, use the repository-reader role assignment described by Azure
 instead of `--attach-acr`. The Azure overlay uses `azurefile-csi-premium` because the model

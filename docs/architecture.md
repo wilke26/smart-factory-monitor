@@ -1,4 +1,4 @@
-# Architecture v0.18.0
+# Architecture v0.19.0
 
 ## Scope
 
@@ -24,6 +24,12 @@ transitions authorized by both the previous and replacement keys.
 Version 0.18 closes build and rollout input ambiguity with hash-pinned Python dependency
 sets, commit-pinned CI actions, a locked wheel-builder boundary, and digest-bound release
 rendering for every Kubernetes application workload.
+Version 0.19 adds a release-only evidence boundary. Semantic version tags must match the
+package version and pass both quality and Compose jobs before CI creates release evidence.
+GitHub attests the wheel, source archive, and deterministic release manifest for public
+repositories or an explicitly enabled Enterprise Cloud private repository. A full locked
+ML-runtime SPDX SBOM is checked inside the runner but is not uploaded or submitted to an
+external transparency service.
 
 ```text
 Offline ML lifecycle                              Online telemetry path

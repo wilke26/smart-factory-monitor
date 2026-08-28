@@ -93,6 +93,46 @@ and alert dispatcher all resolve to the same immutable image. The ordinary Kusto
 overlay remains useful for review and local rendering but is not the production rollout
 artifact.
 
+## Release provenance and SBOM privacy
+
+The supply-chain job runs only for a semantic release tag such as `v0.19.0`. The tag must
+exactly match `project.version` in `pyproject.toml`, and the quality matrix plus the full
+Compose job must pass before evidence is created. Ordinary `main` pushes and pull requests
+do not create release evidence or attestations.
+
+CI assembles the locked ML runtime and validates a complete SPDX JSON SBOM inside the
+ephemeral runner. It deliberately disables both workflow-artifact and release-asset upload
+for that file and does not submit it to Sigstore. The retained release manifest contains
+the SBOM's SHA-256, package count, format, and scope, allowing an access-controlled copy
+retained by a production release process to be correlated without making its dependency
+list public.
+
+GitHub artifact attestations in private repositories require GitHub Enterprise Cloud. The
+workflow therefore enables the attestation step automatically only for public repositories.
+For a private Enterprise Cloud repository, set the repository Actions variable
+`ENABLE_GITHUB_ATTESTATIONS=true`. Leave it unset for private Free, Pro, or Team repositories;
+the release-evidence artifact will still be created and the unsupported attestation step
+will be skipped instead of failing the release job.
+
+The 30-day workflow artifact always contains the wheel, source archive, deterministic
+manifest, and checksums. When attestation is enabled it additionally contains the GitHub
+provenance bundle. After downloading it, verify the checksums and, where present, the
+attested package against this repository:
+
+```bash
+cd dist
+sha256sum --check SHA256SUMS
+gh attestation verify smart_factory_monitor-0.19.0-py3-none-any.whl \
+  --repo wilke26/smart-factory-monitor
+```
+
+Private-repository verification requires Enterprise Cloud and an authenticated GitHub CLI
+identity with access.
+If the repository becomes public, new GitHub attestations use public Sigstore transparency
+infrastructure and must be treated as permanent public release records. Creating the tag is
+therefore an explicit publication decision. This package attestation does not cover a later
+container build; registry-bound container provenance remains separate work.
+
 ## Model evaluation gate
 
 The offline evaluator emits one structured `ml_model_evaluated` event per configured

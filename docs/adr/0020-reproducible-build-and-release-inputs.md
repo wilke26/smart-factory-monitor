@@ -36,5 +36,5 @@ as production release evidence.
 - Dependency updates become larger reviewed lockfile changes and lock regeneration adds
   CI time.
 - Platform packages installed by the base image and Debian repositories are still an
-  external build input; image scanning, periodic rebuilds, and future provenance
-  attestations remain necessary.
+  external build input; image scanning, periodic rebuilds, and registry-bound image
+  provenance remain necessary.

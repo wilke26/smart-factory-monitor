@@ -114,3 +114,11 @@ For v0.18, dependency resolution is materialized as reviewed hash-pinned build, 
 ML, and development locks. CI independently regenerates those locks, checks every external
 Action for a full commit pin, builds the application wheel in a locked stage, and renders
 a synthetic digest-bound Kubernetes release to prove all workloads use identical bytes.
+
+For v0.19, the initial idea of publishing evidence on every `main` push was rejected after
+reviewing the lifecycle and privacy consequences. Attestation now requires a matching
+semantic release tag, successful quality plus Compose gates, and either a public repository
+or explicit Enterprise Cloud opt-in for a private repository. CI still generates and
+validates a full SPDX inventory of the locked ML runtime, but does not upload it or send it
+to Sigstore. When supported, only package artifacts and a manifest containing the SBOM
+digest and bounded package count receive GitHub build provenance.

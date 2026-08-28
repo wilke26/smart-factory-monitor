@@ -35,6 +35,27 @@ def test_github_actions_are_pinned_to_full_commits() -> None:
         assert separator and FULL_COMMIT.fullmatch(revision), reference
 
 
+def test_attestations_are_restricted_to_release_tags() -> None:
+    workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    supply_chain_job = workflow.split("  supply-chain:", maxsplit=1)[1].split(
+        "\n  compose:", maxsplit=1
+    )[0]
+    assert "if: startsWith(github.ref, 'refs/tags/v')" in supply_chain_job
+    assert "needs: [quality, compose]" in supply_chain_job
+    assert 'test "${GITHUB_REF_NAME}" = "v${package_version}"' in supply_chain_job
+    assert "attestations: write" in supply_chain_job
+    assert "github.event.repository.visibility == 'public'" in supply_chain_job
+    assert "vars.ENABLE_GITHUB_ATTESTATIONS == 'true'" in supply_chain_job
+    assert "GitHub attestation skipped" in supply_chain_job
+    assert "subject-checksums: dist/SHA256SUMS" in supply_chain_job
+    assert "${RUNNER_TEMP}/smart-factory-ml-runtime" in supply_chain_job
+    assert "upload-artifact: false" in supply_chain_job
+    assert "upload-release-assets: false" in supply_chain_job
+    assert "sbom-path:" not in supply_chain_job
+    assert "push-to-registry: true" not in workflow
+
+
 def test_container_installation_enforces_hash_locks() -> None:
     dockerfile = (REPOSITORY_ROOT / "Dockerfile").read_text(encoding="utf-8")
 

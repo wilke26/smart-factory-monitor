@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.18.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.19.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -41,7 +41,11 @@ concurrent operators cannot create a fork or record a stale previous key.
 v0.18 makes Python installation reproducible through separate hash-pinned build,
 runtime, ML, and development locks; pins every third-party GitHub Action to a full commit;
 and adds a fail-closed Kubernetes release renderer that binds all application workloads
-to one immutable registry digest.
+to one immutable registry digest. v0.19 adds release-tag-only package provenance where the
+repository plan supports it and a deterministic release manifest on every matching tag.
+CI creates and validates a complete SPDX inventory of the locked ML runtime without
+publishing that dependency inventory; the manifest retains its digest and package count so
+an independently retained SBOM can be correlated later.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -543,12 +547,13 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0018: externally retained signed audit checkpoints](docs/adr/0018-signed-audit-checkpoints.md)
 - [ADR 0019: dual-signed audit-attestation key rotation](docs/adr/0019-dual-signed-audit-key-rotation.md)
 - [ADR 0020: reproducible build and immutable release inputs](docs/adr/0020-reproducible-build-and-release-inputs.md)
+- [ADR 0021: release-only provenance and private SBOM](docs/adr/0021-release-only-provenance-and-private-sbom.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-Future versions can add retention/compression policies, image provenance and attestations,
+Future versions can add retention/compression policies, registry-bound image provenance,
 production backup scheduling and off-site retention, human model-approval integration,
 registry archival policy, security-configuration audit events, externally administered
 root-key custody, checkpoint scheduling and immutable retention, and infrastructure-as-code for managed dependencies. Local Compose
