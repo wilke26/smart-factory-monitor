@@ -70,6 +70,29 @@ Third-party Compose services are also pinned by manifest digest. A promoted prod
 image should itself be stored and deployed by digest because package repositories can
 change after the source-level base pin.
 
+## Reproducible build and release inputs
+
+CI and Docker install only the committed hash-pinned dependency sets under
+`requirements/`. The builder uses `build.lock`; normal processes use `runtime.lock`; ML
+tools use `ml.lock`; tests and audits use `dev.lock`. CI regenerates all four locks on
+Python 3.12 and fails on drift. Every external GitHub Action is pinned to a full commit,
+with its reviewed release tag retained as a comment for update visibility.
+
+Production Kubernetes manifests must be produced with an image digest:
+
+```bash
+python deploy/kubernetes/render-release.py \
+  --image registry.example/smart-factory-monitor \
+  --digest "$IMAGE_DIGEST" \
+  --output /tmp/smart-factory-release.yaml
+kubectl apply -f /tmp/smart-factory-release.yaml
+```
+
+The renderer rejects tags and malformed digests and verifies that consumer, simulator,
+and alert dispatcher all resolve to the same immutable image. The ordinary Kustomize
+overlay remains useful for review and local rendering but is not the production rollout
+artifact.
+
 ## Model evaluation gate
 
 The offline evaluator emits one structured `ml_model_evaluated` event per configured

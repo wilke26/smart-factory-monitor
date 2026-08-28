@@ -19,6 +19,8 @@ _to_delete/
 backups/
 docs/~$*
 docs/Smart_Factory_Monitor_Analysebericht*.docx
+/generate_report.py
+/smart-factory-monitor-analyse.docx
 audit-checkpoints/
 docker/mosquitto/data/*
 docker/mosquitto/log/*

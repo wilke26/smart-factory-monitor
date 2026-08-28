@@ -109,3 +109,8 @@ For v0.17.1, review findings were reproduced against the implementation rather t
 accepted from the report alone. Regression tests verify that an active key disconnected
 from the pinned root cannot rotate and that independent rotator instances serialize on
 the shared filesystem lock.
+
+For v0.18, dependency resolution is materialized as reviewed hash-pinned build, runtime,
+ML, and development locks. CI independently regenerates those locks, checks every external
+Action for a full commit pin, builds the application wheel in a locked stage, and renders
+a synthetic digest-bound Kubernetes release to prove all workloads use identical bytes.

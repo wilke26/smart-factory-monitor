@@ -7,7 +7,7 @@ deployment, operators must provide:
 
 - a reachable MQTT 5 broker with TLS and separate simulator/consumer identities;
 - a reachable PostgreSQL/TimescaleDB database with migrations already applied;
-- a container registry image built with the `ml` extra if ML will be enabled;
+- a container registry image built with `requirements/ml.lock` if ML will be enabled;
 - CA and client certificates issued by the deployment PKI;
 - an Ed25519 model-signing public key distributed separately from model artifacts;
 - a Kubernetes storage class supporting `ReadWriteMany` for the model registry.
@@ -23,6 +23,8 @@ kubectl kustomize deploy/kubernetes/overlays/azure >/tmp/smart-factory-azure.yam
 
 Edit the broker host and non-secret settings in the base `kustomization.yaml`. Replace
 `SMART_FACTORY_ACR` in the Azure overlay with the actual registry name.
+This ordinary render is for inspection. A production rollout must use the digest-bound
+render described below.
 
 ## Create runtime secrets
 
@@ -64,8 +66,8 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.17.1 \
-  --build-arg 'PROJECT_INSTALL=.[ml]' .
+  --image smart-factory-monitor:0.18.0 \
+  --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \
   --resource-group "$AKS_RESOURCE_GROUP" \
@@ -76,10 +78,21 @@ az aks get-credentials \
   --resource-group "$AKS_RESOURCE_GROUP" \
   --name "$AKS_NAME"
 
-kubectl apply -k deploy/kubernetes/overlays/azure
+IMAGE_DIGEST=sha256:replace-with-the-registry-digest
+python deploy/kubernetes/render-release.py \
+  --image "$ACR_NAME.azurecr.io/smart-factory-monitor" \
+  --digest "$IMAGE_DIGEST" \
+  --output /tmp/smart-factory-release.yaml
+kubectl apply -f /tmp/smart-factory-release.yaml
 kubectl -n smart-factory rollout status deployment/smart-factory-consumer
 kubectl -n smart-factory rollout status deployment/smart-factory-alert-dispatcher
 ```
+
+Obtain `IMAGE_DIGEST` from the successful registry build or a separate authenticated ACR
+lookup and verify it in the release record. The renderer rejects a tag, validates the
+digest syntax, and fails unless consumer, simulator, and alert dispatcher are all bound
+to the exact same immutable reference. Never apply the mutable-tag overlay as the
+production release artifact.
 
 For an ABAC-enabled ACR, use the repository-reader role assignment described by Azure
 instead of `--attach-acr`. The Azure overlay uses `azurefile-csi-premium` because the model

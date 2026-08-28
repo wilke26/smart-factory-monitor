@@ -1,4 +1,4 @@
-# Architecture v0.17.1
+# Architecture v0.18.0
 
 ## Scope
 
@@ -21,6 +21,9 @@ Version 0.16 signs a verified chain head with a separate Ed25519 attestation key
 exports a portable checkpoint that can be verified without database access.
 Version 0.17 preserves that trust across explicit key rotation through immutable
 transitions authorized by both the previous and replacement keys.
+Version 0.18 closes build and rollout input ambiguity with hash-pinned Python dependency
+sets, commit-pinned CI actions, a locked wheel-builder boundary, and digest-bound release
+rendering for every Kubernetes application workload.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -199,6 +202,11 @@ passwords, certificates, private signing keys, or production SQL migration crede
 Runtime values come from a ConfigMap and named Secrets; the consumer mounts only the
 model verification public key. The Azure overlay selects an Azure Files CSI storage class
 and an ACR image. Database schema migration remains an explicit release prerequisite.
+Committed image tags are development templates. The production renderer validates one
+registry repository and SHA-256 digest, injects that immutable reference into a temporary
+overlay, renders it, and fails unless all three application deployments use the exact
+same bytes. Build dependencies and runtime dependencies are likewise separate
+hash-verified inputs; the final image never resolves dependencies from `pyproject.toml`.
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,

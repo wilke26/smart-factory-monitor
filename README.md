@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.17.1** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.18.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -38,6 +38,10 @@ so checkpoints created before and after rotation remain verifiable without silen
 trusting an unconnected replacement key. v0.17.1 validates that the active key is still
 reachable from that root before mutation and serializes the complete audited rotation so
 concurrent operators cannot create a fork or record a stale previous key.
+v0.18 makes Python installation reproducible through separate hash-pinned build,
+runtime, ML, and development locks; pins every third-party GitHub Action to a full commit;
+and adds a fail-closed Kubernetes release renderer that binds all application workloads
+to one immutable registry digest.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -474,16 +478,23 @@ Python 3.12 or newer is required.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install --require-hashes -r requirements/dev.lock
+python -m pip install --require-hashes -r requirements/build.lock
+python -m pip install --no-deps -e .
+python -m pip check
 ruff check .
 ruff format --check .
 mypy
 python -m pip_audit
 pytest --cov=smart_factory
-python -m build
+python -m build --no-isolation
 docker compose config --quiet
 kubectl kustomize deploy/kubernetes/overlays/azure >/tmp/smart-factory-azure.yaml
 ```
+
+The lockfiles are generated from `pyproject.toml`; see
+[`requirements/README.md`](requirements/README.md) for the controlled refresh workflow.
+CI regenerates them on Python 3.12 and rejects an uncommitted difference.
 
 Tests cover the contract, configuration, application service, observability, MQTT callbacks,
 valid/invalid ingestion pipelines, rule boundaries, model training/inference, pre-load
@@ -531,12 +542,13 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0017: hash-chained operator audit trail](docs/adr/0017-hash-chained-operator-audit-trail.md)
 - [ADR 0018: externally retained signed audit checkpoints](docs/adr/0018-signed-audit-checkpoints.md)
 - [ADR 0019: dual-signed audit-attestation key rotation](docs/adr/0019-dual-signed-audit-key-rotation.md)
+- [ADR 0020: reproducible build and immutable release inputs](docs/adr/0020-reproducible-build-and-release-inputs.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
 - [AI-assisted development](docs/ai-assisted-development.md)
 
-Future versions can add retention/compression policies, immutable image promotion,
+Future versions can add retention/compression policies, image provenance and attestations,
 production backup scheduling and off-site retention, human model-approval integration,
 registry archival policy, security-configuration audit events, externally administered
 root-key custody, checkpoint scheduling and immutable retention, and infrastructure-as-code for managed dependencies. Local Compose

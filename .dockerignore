@@ -16,3 +16,5 @@ backups
 audit-checkpoints
 tests
 docs
+/generate_report.py
+/smart-factory-monitor-analyse.docx

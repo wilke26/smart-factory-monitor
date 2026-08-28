@@ -93,7 +93,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-consumer"]
     restart: unless-stopped
     init: true
@@ -164,7 +164,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-generate-model-key"]
     restart: "no"
     environment:
@@ -179,7 +179,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-train-model"]
     profiles: ["tools"]
     depends_on:
@@ -207,7 +207,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-evaluate-model"]
     profiles: ["tools"]
     depends_on:
@@ -236,7 +236,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-promote-model"]
     profiles: ["tools"]
     depends_on:
@@ -264,7 +264,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-rollback-model"]
     profiles: ["tools"]
     depends_on:
@@ -293,7 +293,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-verify-audit"]
     profiles: ["tools"]
     depends_on:
@@ -310,7 +310,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-generate-audit-key"]
     profiles: ["tools"]
     restart: "no"
@@ -328,7 +328,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-export-audit-checkpoint"]
     profiles: ["tools"]
     restart: "no"
@@ -356,7 +356,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-verify-audit-checkpoint"]
     profiles: ["tools"]
     restart: "no"
@@ -378,7 +378,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     command: ["smart-factory-rotate-audit-key"]
     profiles: ["tools"]
     restart: "no"
@@ -451,7 +451,7 @@ services:
     build:
       context: .
       args:
-        PROJECT_INSTALL: ".[ml]"
+        DEPENDENCY_LOCK: requirements/ml.lock
     profiles: ["recovery"]
     restart: "no"
     command:
