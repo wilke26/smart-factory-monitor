@@ -95,35 +95,84 @@ artifact.
 
 ## Release provenance and SBOM privacy
 
-The supply-chain job runs only for a semantic release tag such as `v0.19.0`. The tag must
-exactly match `project.version` in `pyproject.toml`, and the quality matrix plus the full
-Compose job must pass before evidence is created. Ordinary `main` pushes and pull requests
-do not create release evidence or attestations.
+The release jobs run only for an annotated semantic release tag such as `v0.20.0`. The tag
+must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
+`origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
+created. Ordinary `main` pushes and pull requests do not create release evidence,
+attestations, or releases.
+
+Before creating the tag, generate an RSA recipient key of at least 3072 bits in an
+independently controlled environment. Keep the encrypted private key and its passphrase out
+of GitHub and the repository, back them up under the release-recovery policy, and configure
+only the public key as the repository Actions secret:
+
+```bash
+umask 077
+RELEASE_EVIDENCE_KEY_DIRECTORY=/secure/offline/release-evidence
+mkdir -p "$RELEASE_EVIDENCE_KEY_DIRECTORY"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+  -aes-256-cbc -out "$RELEASE_EVIDENCE_KEY_DIRECTORY/private.pem"
+openssl pkey -in "$RELEASE_EVIDENCE_KEY_DIRECTORY/private.pem" -pubout \
+  -out "$RELEASE_EVIDENCE_KEY_DIRECTORY/public.pem"
+gh secret set RELEASE_EVIDENCE_RECIPIENT_PUBLIC_KEY \
+  < "$RELEASE_EVIDENCE_KEY_DIRECTORY/public.pem"
+```
 
 CI assembles the locked ML runtime and validates a complete SPDX JSON SBOM inside the
-ephemeral runner. It deliberately disables both workflow-artifact and release-asset upload
-for that file and does not submit it to Sigstore. The retained release manifest contains
-the SBOM's SHA-256, package count, format, and scope, allowing an access-controlled copy
-retained by a production release process to be correlated without making its dependency
-list public.
+ephemeral build runner. It encrypts the exact document with AES-256-GCM, wraps the random
+data key with RSA-OAEP-SHA256, and authenticates the SBOM filename, release version, and
+revision. The plaintext is never transferred between jobs, uploaded, attached to the
+release, or sent to Sigstore. The release manifest records both plaintext and ciphertext
+digests plus package count, format, scope, algorithm, recipient-key fingerprint, and
+ciphertext size. Retain old private keys by fingerprint when rotating the recipient.
+
+`release-build` has no OIDC, attestation, or publication permission. `release-attest`
+receives only the signing permissions and consumes already checksummed evidence.
+`release-publish` receives only `contents: write`, verifies the transfer, and creates a
+GitHub Release containing the wheel, source archive, manifest, checksums, and encrypted
+SBOM. The one-day workflow artifact is only an inter-job transport; the GitHub Release is
+the durable repository copy. Production retention still requires an independently
+administered immutable mirror because deleting the release or repository removes that copy.
 
 GitHub artifact attestations in private repositories require GitHub Enterprise Cloud. The
 workflow therefore enables the attestation step automatically only for public repositories.
 For a private Enterprise Cloud repository, set the repository Actions variable
 `ENABLE_GITHUB_ATTESTATIONS=true`. Leave it unset for private Free, Pro, or Team repositories;
-the release-evidence artifact will still be created and the unsupported attestation step
-will be skipped instead of failing the release job.
+the durable release will still be created and the unsupported attestation job will be
+skipped instead of failing publication.
 
-The 30-day workflow artifact always contains the wheel, source archive, deterministic
-manifest, and checksums. When attestation is enabled it additionally contains the GitHub
-provenance bundle. After downloading it, verify the checksums and, where present, the
-attested package against this repository:
+After downloading a release, verify the ciphertext and package checksums and, where
+present, the attested package against this repository:
 
 ```bash
 cd dist
 sha256sum --check SHA256SUMS
-gh attestation verify smart_factory_monitor-0.19.0-py3-none-any.whl \
+gh attestation verify smart_factory_monitor-0.20.0-py3-none-any.whl \
   --repo wilke26/smart-factory-monitor
+```
+
+Recover the private SBOM only in the controlled recovery environment. Supply an encrypted
+private-key password through an environment variable rather than a command-line argument,
+then compare the recovered plaintext digest with `sbom.sha256` in
+`release-manifest.json`:
+
+```bash
+export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
+python scripts/release_evidence_crypto.py decrypt \
+  --input smart_factory_monitor-0.20.0.ml-runtime.spdx.json.enc \
+  --output recovered.ml-runtime.spdx.json \
+  --private-key /secure/release-evidence-private.pem \
+  --private-key-password-env RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD \
+  --version 0.20.0 \
+  --revision '<full-release-commit-sha>'
+python - <<'PY'
+import hashlib, json
+from pathlib import Path
+manifest = json.loads(Path("release-manifest.json").read_text())
+actual = hashlib.sha256(Path("recovered.ml-runtime.spdx.json").read_bytes()).hexdigest()
+assert actual == manifest["sbom"]["sha256"]
+PY
+unset RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD
 ```
 
 Private-repository verification requires Enterprise Cloud and an authenticated GitHub CLI

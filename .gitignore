@@ -22,6 +22,9 @@ docs/Smart_Factory_Monitor_Analysebericht*.docx
 /generate_report.py
 /smart-factory-monitor-analyse.docx
 audit-checkpoints/
+release-evidence-private.pem
+release-evidence-public.pem
+recovered*.spdx.json
 docker/mosquitto/data/*
 docker/mosquitto/log/*
 !docker/mosquitto/data/.gitkeep

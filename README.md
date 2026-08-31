@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.19.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.20.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -45,7 +45,10 @@ to one immutable registry digest. v0.19 adds release-tag-only package provenance
 repository plan supports it and a deterministic release manifest on every matching tag.
 CI creates and validates a complete SPDX inventory of the locked ML runtime without
 publishing that dependency inventory; the manifest retains its digest and package count so
-an independently retained SBOM can be correlated later.
+an independently retained SBOM can be correlated later. v0.20 encrypts those exact SBOM
+bytes for an externally controlled RSA recipient, stores only ciphertext with the durable
+GitHub Release, requires an annotated release tag reachable from `main`, and separates
+build, optional attestation, and release-publication permissions into isolated jobs.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -548,6 +551,7 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0019: dual-signed audit-attestation key rotation](docs/adr/0019-dual-signed-audit-key-rotation.md)
 - [ADR 0020: reproducible build and immutable release inputs](docs/adr/0020-reproducible-build-and-release-inputs.md)
 - [ADR 0021: release-only provenance and private SBOM](docs/adr/0021-release-only-provenance-and-private-sbom.md)
+- [ADR 0022: durable encrypted release evidence](docs/adr/0022-durable-encrypted-release-evidence.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)

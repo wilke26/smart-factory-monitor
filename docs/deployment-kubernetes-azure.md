@@ -66,7 +66,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.19.0 \
+  --image smart-factory-monitor:0.20.0 \
   --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \
@@ -94,7 +94,7 @@ digest syntax, and fails unless consumer, simulator, and alert dispatcher are al
 to the exact same immutable reference. Never apply the mutable-tag overlay as the
 production release artifact.
 
-When enabled for a public or Enterprise Cloud repository, the v0.19 GitHub attestation
+When enabled for a public or Enterprise Cloud repository, the v0.20 GitHub attestation
 covers the Python wheel, source archive, and release manifest, not a separately built
 container image. A future registry publication flow must bind the container digest to its
 own provenance before admission policy treats it as verified.

@@ -1,4 +1,4 @@
-# Architecture v0.19.0
+# Architecture v0.20.0
 
 ## Scope
 
@@ -30,6 +30,12 @@ GitHub attests the wheel, source archive, and deterministic release manifest for
 repositories or an explicitly enabled Enterprise Cloud private repository. A full locked
 ML-runtime SPDX SBOM is checked inside the runner but is not uploaded or submitted to an
 external transparency service.
+Version 0.20 makes that private evidence durable without publishing its dependency list.
+The validated SBOM is encrypted to an externally controlled RSA recipient before leaving
+the build runner, and the ciphertext is bound into the manifest and retained with the
+GitHub Release. Build, optional GitHub attestation, and release publication execute as
+separate jobs with mutually limited permissions. Releases additionally require an annotated
+version tag whose commit is reachable from `main`.
 
 ```text
 Offline ML lifecycle                              Online telemetry path

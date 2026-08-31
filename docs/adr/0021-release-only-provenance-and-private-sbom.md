@@ -3,6 +3,10 @@
 - Status: accepted
 - Date: 2026-08-28
 
+ADR 0022 supersedes the ephemeral-retention part of this decision by encrypting the exact
+SBOM and retaining the ciphertext as a durable release asset. The release-only and
+non-publication boundaries remain in force.
+
 ## Context
 
 Reproducible inputs do not by themselves prove which workflow produced a downloadable

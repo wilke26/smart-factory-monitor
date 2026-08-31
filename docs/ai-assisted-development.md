@@ -122,3 +122,10 @@ or explicit Enterprise Cloud opt-in for a private repository. CI still generates
 validates a full SPDX inventory of the locked ML runtime, but does not upload it or send it
 to Sigstore. When supported, only package artifacts and a manifest containing the SBOM
 digest and bounded package count receive GitHub build provenance.
+
+For v0.20, external review correctly distinguished a generated SBOM digest from recoverable
+evidence and identified the shared build/signing permission boundary. The correction uses
+authenticated hybrid encryption so the exact SBOM can outlive its runner without becoming
+public, requires the recipient private key to remain outside GitHub, and splits building,
+attesting, and publishing into separate jobs. Tests recover the ciphertext with a temporary
+key and reject weak keys, identity mismatches, output replacement, and modified envelopes.

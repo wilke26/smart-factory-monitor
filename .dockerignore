@@ -14,6 +14,9 @@ output
 _to_delete
 backups
 audit-checkpoints
+release-evidence-private.pem
+release-evidence-public.pem
+recovered*.spdx.json
 tests
 docs
 /generate_report.py
