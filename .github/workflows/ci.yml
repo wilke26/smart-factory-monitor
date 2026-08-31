@@ -73,11 +73,32 @@ jobs:
       - name: Verify release tag matches package version
         id: version
         run: |
+          set -euo pipefail
           package_version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-          test "${GITHUB_REF_NAME}" = "v${package_version}"
-          test "$(git cat-file -t "${GITHUB_REF_NAME}")" = "tag"
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+          expected_tag="v${package_version}"
+          tag_ref="refs/tags/${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_NAME}" != "${expected_tag}" ]; then
+            echo "::error title=Release version mismatch::Tag ${GITHUB_REF_NAME} does not match package version ${package_version}."
+            exit 1
+          fi
+          if [ "${GITHUB_REF}" != "${tag_ref}" ]; then
+            echo "::error title=Unexpected release ref::Expected ${tag_ref}, received ${GITHUB_REF}."
+            exit 1
+          fi
+          tag_type=$(git cat-file -t "${tag_ref}" 2>/dev/null || true)
+          if [ "${tag_type}" != "tag" ]; then
+            echo "::error title=Untrusted release tag::${tag_ref} must be an annotated tag; observed object type: ${tag_type:-missing}."
+            exit 1
+          fi
+          release_commit=$(git rev-parse "${tag_ref}^{commit}")
+          git fetch --force --no-tags origin \
+            "refs/heads/main:refs/remotes/origin/main"
+          if ! git merge-base --is-ancestor "${release_commit}" \
+            refs/remotes/origin/main; then
+            echo "::error title=Release is not on main::Commit ${release_commit} is not reachable from origin/main."
+            exit 1
+          fi
+          echo "Verified annotated release tag ${GITHUB_REF_NAME} at ${release_commit}."
           echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
       - name: Build package from locked tools
         run: |

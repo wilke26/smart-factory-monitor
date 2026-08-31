@@ -66,7 +66,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.20.0 \
+  --image smart-factory-monitor:0.20.1 \
   --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \

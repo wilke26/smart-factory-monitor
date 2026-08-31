@@ -43,9 +43,15 @@ def test_release_evidence_is_restricted_to_trusted_release_tags() -> None:
     )[0]
     assert "if: startsWith(github.ref, 'refs/tags/v')" in release_build_job
     assert "needs: [quality, compose]" in release_build_job
-    assert 'test "${GITHUB_REF_NAME}" = "v${package_version}"' in release_build_job
-    assert 'test "$(git cat-file -t "${GITHUB_REF_NAME}")" = "tag"' in release_build_job
-    assert 'git merge-base --is-ancestor "${GITHUB_SHA}" origin/main' in release_build_job
+    assert 'tag_ref="refs/tags/${GITHUB_REF_NAME}"' in release_build_job
+    assert 'if [ "${GITHUB_REF_NAME}" != "${expected_tag}" ]; then' in release_build_job
+    assert 'tag_type=$(git cat-file -t "${tag_ref}" 2>/dev/null || true)' in release_build_job
+    assert 'release_commit=$(git rev-parse "${tag_ref}^{commit}")' in release_build_job
+    assert '"refs/heads/main:refs/remotes/origin/main"' in release_build_job
+    assert 'git merge-base --is-ancestor "${release_commit}"' in release_build_job
+    assert "Release version mismatch" in release_build_job
+    assert "Untrusted release tag" in release_build_job
+    assert "Release is not on main" in release_build_job
     assert "RELEASE_EVIDENCE_RECIPIENT_PUBLIC_KEY" in release_build_job
     assert "release_evidence_crypto.py encrypt" in release_build_job
     assert "--encrypted-sbom" in release_build_job
