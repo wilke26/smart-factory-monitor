@@ -95,7 +95,7 @@ artifact.
 
 ## Release provenance and SBOM privacy
 
-The release jobs run only for an annotated semantic release tag such as `v0.20.1`. The tag
+The release jobs run only for an annotated semantic release tag such as `v0.20.2`. The tag
 must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
 `origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
 created. Ordinary `main` pushes and pull requests do not create release evidence,
@@ -147,7 +147,7 @@ present, the attested package against this repository:
 ```bash
 cd dist
 sha256sum --check SHA256SUMS
-gh attestation verify smart_factory_monitor-0.20.1-py3-none-any.whl \
+gh attestation verify smart_factory_monitor-0.20.2-py3-none-any.whl \
   --repo wilke26/smart-factory-monitor
 ```
 
@@ -159,11 +159,11 @@ then compare the recovered plaintext digest with `sbom.sha256` in
 ```bash
 export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
 python scripts/release_evidence_crypto.py decrypt \
-  --input smart_factory_monitor-0.20.1.ml-runtime.spdx.json.enc \
+  --input smart_factory_monitor-0.20.2.ml-runtime.spdx.json.enc \
   --output recovered.ml-runtime.spdx.json \
   --private-key /secure/release-evidence-private.pem \
   --private-key-password-env RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD \
-  --version 0.20.1 \
+  --version 0.20.2 \
   --revision '<full-release-commit-sha>'
 python - <<'PY'
 import hashlib, json
