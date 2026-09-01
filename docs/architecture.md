@@ -1,4 +1,4 @@
-# Architecture v0.21.0
+# Architecture v0.22.0
 
 ## Scope
 
@@ -36,6 +36,10 @@ the build runner, and the ciphertext is bound into the manifest and retained wit
 GitHub Release. Build, optional GitHub attestation, and release publication execute as
 separate jobs with mutually limited permissions. Releases additionally require an annotated
 version tag whose commit is reachable from `main`.
+Version 0.21 publishes one scanned release container, resolves its canonical registry
+digest, encrypts its exact inventory, and binds the release evidence plus Kubernetes YAML
+to those bytes. Version 0.22 enforces that deployment contract at the Kubernetes API with
+a native fail-closed digest-only admission policy for explicitly protected namespaces.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -227,6 +231,14 @@ generation, release-manifest schema 3, optional container attestation, and Kuber
 rendering. A separate unprivileged assembly job verifies both encrypted evidence streams;
 neither a mutable version tag nor a second container build can enter the deployment
 manifest.
+
+v0.22 closes the direct Kubernetes API bypass for mutable images. A separately installed
+native validating admission policy applies to every Deployment in an explicitly labelled
+release namespace and fails closed unless every normal and init-container image is a
+lowercase repository reference pinned directly to a full SHA-256 digest. The policy is a
+cluster prerequisite rather than part of the application release authority. It enforces
+image identity syntax; it does not independently verify signatures, provenance, or
+registry authorization.
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,

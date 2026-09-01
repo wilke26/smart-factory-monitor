@@ -136,3 +136,10 @@ job, a canonical SHA-256 registry identity, an encrypted digest-derived containe
 an unprivileged assembly stage, and three Kubernetes image references bound to the same
 digest. Metadata assembly rejects modified artifacts, identity disagreement, malformed
 digests, unsupported platforms, and deployment manifests that do not bind every workload.
+
+For v0.22, checks treat admission scope as a security boundary. They require the stable
+Kubernetes v1 policy and binding API, fail-closed evaluation, namespace-level opt-in,
+`Deny` plus `Audit`, coverage of normal and init containers, and rejection of tags,
+tag-plus-digest references, abbreviated digests, and uppercase repositories. CI renders
+the standalone policy independently from application overlays so cluster administration
+does not become an application release permission.

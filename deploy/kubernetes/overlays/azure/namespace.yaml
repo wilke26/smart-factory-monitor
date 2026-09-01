@@ -4,3 +4,4 @@ metadata:
   name: smart-factory
   labels:
     app.kubernetes.io/part-of: smart-factory-monitor
+    security.smart-factory-monitor.io/require-digest-images: "true"

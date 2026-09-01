@@ -468,6 +468,7 @@ jobs:
         run: |
           kubectl kustomize deploy/kubernetes/base > /tmp/smart-factory-base.yaml
           kubectl kustomize deploy/kubernetes/overlays/azure > /tmp/smart-factory-azure.yaml
+          kubectl kustomize deploy/kubernetes/policies > /tmp/smart-factory-policies.yaml
           python deploy/kubernetes/render-release.py \
             --image smartfactory.azurecr.io/smart-factory-monitor \
             --digest sha256:1111111111111111111111111111111111111111111111111111111111111111 \

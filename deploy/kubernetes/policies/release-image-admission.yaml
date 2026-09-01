@@ -1,0 +1,40 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: release-images.smart-factory-monitor.io
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+  validations:
+    - expression: >-
+        object.spec.template.spec.containers.all(container,
+        container.image.matches('^([a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?/)?([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*@sha256:[0-9a-f]{64}$'))
+      message: >-
+        Every application container image must be a lowercase repository reference
+        pinned directly to a full sha256 digest; tags and unqualified mutable names are denied.
+      reason: Invalid
+    - expression: >-
+        !has(object.spec.template.spec.initContainers) ||
+        object.spec.template.spec.initContainers.all(container,
+        container.image.matches('^([a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?/)?([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*@sha256:[0-9a-f]{64}$'))
+      message: >-
+        Every application init-container image must be a lowercase repository reference
+        pinned directly to a full sha256 digest; tags and unqualified mutable names are denied.
+      reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: release-images.smart-factory-monitor.io
+spec:
+  policyName: release-images.smart-factory-monitor.io
+  validationActions: [Deny, Audit]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        security.smart-factory-monitor.io/require-digest-images: "true"

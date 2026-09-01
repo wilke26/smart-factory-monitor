@@ -64,6 +64,9 @@ assets.
 - Registry retention, tag immutability policy, replication, admission enforcement, and
   independently administered evidence mirroring remain production responsibilities.
 
+Digest-only cluster admission is implemented by ADR 0024. Signature/provenance admission
+and the other registry responsibilities remain outside this decision.
+
 ## Rejected alternatives
 
 - Build a second container in the publication job: the tested image and published image

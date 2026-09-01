@@ -93,9 +93,27 @@ and alert dispatcher all resolve to the same immutable image. The ordinary Kusto
 overlay remains useful for review and local rendering but is not the production rollout
 artifact.
 
+Install the v0.22 admission control once per cluster before the protected namespace is
+used:
+
+```bash
+kubectl apply -k deploy/kubernetes/policies
+kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding \
+  release-images.smart-factory-monitor.io
+```
+
+The Azure namespace opts in through
+`security.smart-factory-monitor.io/require-digest-images=true`. Once active, the policy
+denies every Deployment create or update in that namespace unless all normal and init
+containers use a lowercase repository reference pinned directly to a full SHA-256 digest.
+Confirm activation with a server-side dry run of a deliberately tagged Deployment before
+the first production rollout. Install this cluster-scoped prerequisite with a separate
+administrator identity; application release automation does not need admission-policy
+write permission.
+
 ## Release provenance and SBOM privacy
 
-The release jobs run only for an annotated semantic release tag such as `v0.21.0`. The tag
+The release jobs run only for an annotated semantic release tag such as `v0.22.0`. The tag
 must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
 `origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
 created. Ordinary `main` pushes and pull requests do not create release evidence,
@@ -151,7 +169,7 @@ digest is pullable, and, where present, verify attestations against this reposit
 ```bash
 cd dist
 sha256sum --check SHA256SUMS
-gh attestation verify smart_factory_monitor-0.21.0-py3-none-any.whl \
+gh attestation verify smart_factory_monitor-0.22.0-py3-none-any.whl \
   --repo wilke26/smart-factory-monitor
 IMAGE_REFERENCE=$(python -c 'import json; print(json.load(open("release-manifest.json"))["container"]["reference"])')
 docker pull "$IMAGE_REFERENCE"
@@ -165,18 +183,18 @@ then compare the recovered plaintext digest with `sbom.sha256` in
 ```bash
 export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
 python scripts/release_evidence_crypto.py decrypt \
-  --input smart_factory_monitor-0.21.0.ml-runtime.spdx.json.enc \
+  --input smart_factory_monitor-0.22.0.ml-runtime.spdx.json.enc \
   --output recovered.ml-runtime.spdx.json \
   --private-key /secure/release-evidence-private.pem \
   --private-key-password-env RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD \
-  --version 0.21.0 \
+  --version 0.22.0 \
   --revision '<full-release-commit-sha>'
 python scripts/release_evidence_crypto.py decrypt \
-  --input smart_factory_monitor-0.21.0.container.spdx.json.enc \
+  --input smart_factory_monitor-0.22.0.container.spdx.json.enc \
   --output recovered.container.spdx.json \
   --private-key /secure/release-evidence-private.pem \
   --private-key-password-env RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD \
-  --version 0.21.0 \
+  --version 0.22.0 \
   --revision '<full-release-commit-sha>'
 python - <<'PY'
 import hashlib, json
@@ -288,8 +306,8 @@ A shared or production environment still needs managed broker ACL provisioning a
 rotation, managed backup scheduling and off-site retention, alert rules, durable metric
 collection, migration rollback policy, alert dead-letter/escalation policy, TimescaleDB
 retention/compression, human model approval integration, model-registry generation
-retention, GHCR retention and replication policy, digest-aware admission enforcement, and
-independently managed key custody.
+retention, GHCR retention and replication policy, signature/provenance-aware admission,
+and independently managed key custody.
 
 v0.15 provides a database-enforced append-only and hash-chained audit trail for model
 promotion and rollback. It records actor, reason, correlation ID, timestamp, previous and

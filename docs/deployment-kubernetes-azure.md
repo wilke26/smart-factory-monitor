@@ -11,6 +11,8 @@ deployment, operators must provide:
 - CA and client certificates issued by the deployment PKI;
 - an Ed25519 model-signing public key distributed separately from model artifacts;
 - a Kubernetes storage class supporting `ReadWriteMany` for the model registry.
+- Kubernetes 1.30 or newer with `ValidatingAdmissionPolicy` available for production
+  digest enforcement.
 
 No password, connection string, private key, or certificate is stored in Git.
 
@@ -66,7 +68,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.21.0 \
+  --image smart-factory-monitor:0.22.0 \
   --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \
@@ -88,13 +90,37 @@ kubectl -n smart-factory rollout status deployment/smart-factory-consumer
 kubectl -n smart-factory rollout status deployment/smart-factory-alert-dispatcher
 ```
 
-For v0.21, obtain `IMAGE_DIGEST` and the complete rendered YAML from the matching GitHub
+For v0.22, obtain `IMAGE_DIGEST` and the complete rendered YAML from the matching GitHub
 Release. The release workflow builds one `linux/amd64` image with the ML dependency lock,
 scans it before publication, pushes the version tag to GHCR, resolves the registry digest,
 and records `ghcr.io/<owner>/<repository>@sha256:...` in manifest schema 3. The attached
 Kubernetes YAML binds consumer, simulator, and alert dispatcher to exactly that reference.
 The semantic registry tag is only a discovery alias and must never be the production
 rollout input.
+
+## Enforce digest-only production deployments
+
+Install the cluster-scoped policy with an administrator identity before creating or
+labelling the release namespace:
+
+```bash
+kubectl apply -k deploy/kubernetes/policies
+kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding \
+  release-images.smart-factory-monitor.io
+```
+
+The Azure namespace carries
+`security.smart-factory-monitor.io/require-digest-images=true`. After admission
+registration has propagated, use a server-side dry run to confirm that a Deployment with
+an image such as `smart-factory-monitor:0.22.0` is denied. Only then apply the
+digest-bound release YAML. The ordinary Azure overlay deliberately retains a review tag
+and will be rejected in the protected namespace.
+
+The policy covers all normal and init-container images in every Deployment in the opted-in
+namespace. It uses `failurePolicy: Fail` with `Deny` and `Audit`; evaluation errors and
+nonconforming references therefore block the API request. A digest proves byte identity,
+not publisher identity: signature/provenance verification and registry authorization
+remain separate deployment controls.
 
 When enabled for a public or Enterprise Cloud repository, GitHub separately attests the
 checksummed release files and the published container name plus digest. Without that

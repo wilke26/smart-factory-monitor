@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.21.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.22.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -52,7 +52,9 @@ build, optional attestation, and release-publication permissions into isolated j
 v0.21 publishes one release container to GHCR only after the quality gates pass, records
 its immutable registry digest, encrypts its exact SPDX inventory for the same external
 recipient, and binds all three Kubernetes application deployments to that digest in a
-checksummed release manifest.
+checksummed release manifest. v0.22 adds a fail-closed native Kubernetes admission policy
+that denies tagged or malformed images for every Deployment in an explicitly protected
+namespace, including sidecars and init containers.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -557,6 +559,7 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0021: release-only provenance and private SBOM](docs/adr/0021-release-only-provenance-and-private-sbom.md)
 - [ADR 0022: durable encrypted release evidence](docs/adr/0022-durable-encrypted-release-evidence.md)
 - [ADR 0023: digest-bound container releases](docs/adr/0023-digest-bound-container-releases.md)
+- [ADR 0024: digest-only deployment admission](docs/adr/0024-digest-only-deployment-admission.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)
