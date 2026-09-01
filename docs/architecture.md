@@ -1,4 +1,4 @@
-# Architecture v0.20.2
+# Architecture v0.21.0
 
 ## Scope
 
@@ -219,6 +219,14 @@ registry repository and SHA-256 digest, injects that immutable reference into a 
 overlay, renders it, and fails unless all three application deployments use the exact
 same bytes. Build dependencies and runtime dependencies are likewise separate
 hash-verified inputs; the final image never resolves dependencies from `pyproject.toml`.
+
+The v0.21 release path builds one `linux/amd64` ML-capable image after the ordinary quality
+and Compose gates, scans that exact local image, and gives only its dedicated job GHCR
+write authority. After publication, the registry digest becomes the identity for SBOM
+generation, release-manifest schema 3, optional container attestation, and Kubernetes
+rendering. A separate unprivileged assembly job verifies both encrypted evidence streams;
+neither a mutable version tag nor a second container build can enter the deployment
+manifest.
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,

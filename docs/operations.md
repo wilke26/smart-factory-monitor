@@ -95,7 +95,7 @@ artifact.
 
 ## Release provenance and SBOM privacy
 
-The release jobs run only for an annotated semantic release tag such as `v0.20.2`. The tag
+The release jobs run only for an annotated semantic release tag such as `v0.21.0`. The tag
 must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
 `origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
 created. Ordinary `main` pushes and pull requests do not create release evidence,
@@ -118,21 +118,25 @@ gh secret set RELEASE_EVIDENCE_RECIPIENT_PUBLIC_KEY \
   < "$RELEASE_EVIDENCE_KEY_DIRECTORY/public.pem"
 ```
 
-CI assembles the locked ML runtime and validates a complete SPDX JSON SBOM inside the
-ephemeral build runner. It encrypts the exact document with AES-256-GCM, wraps the random
-data key with RSA-OAEP-SHA256, and authenticates the SBOM filename, release version, and
-revision. The plaintext is never transferred between jobs, uploaded, attached to the
-release, or sent to Sigstore. The release manifest records both plaintext and ciphertext
-digests plus package count, format, scope, algorithm, recipient-key fingerprint, and
-ciphertext size. Retain old private keys by fingerprint when rotating the recipient.
+CI assembles the locked ML runtime and validates its complete SPDX JSON SBOM inside the
+ephemeral build runner. A separate job builds one `linux/amd64` image with the complete ML
+lock, scans it, publishes `ghcr.io/<owner>/<repository>:<version>`, resolves the canonical
+registry digest, pulls it by digest, and generates a second SPDX inventory from exactly
+those published bytes. Both documents are encrypted with AES-256-GCM for the external RSA
+recipient. Their filenames, release version, and revision are authenticated; plaintext
+SBOMs are never transferred between jobs, uploaded, attached to the release, or sent to
+Sigstore.
 
-`release-build` has no OIDC, attestation, or publication permission. `release-attest`
-receives only the signing permissions and consumes already checksummed evidence.
-`release-publish` receives only `contents: write`, verifies the transfer, and creates a
-GitHub Release containing the wheel, source archive, manifest, checksums, and encrypted
-SBOM. The one-day workflow artifact is only an inter-job transport; the GitHub Release is
-the durable repository copy. Production retention still requires an independently
-administered immutable mirror because deleting the release or repository removes that copy.
+`release-build` has no OIDC, registry, attestation, or publication permission.
+`release-container` alone receives `packages: write`; it cannot publish a GitHub Release or
+attestation. `release-assemble` has no elevated permission and verifies both intermediate
+evidence sets before rendering all application deployments with the resolved digest.
+`release-attest` receives only signing permissions and consumes the final checksummed
+evidence. `release-publish` receives only `contents: write` and creates a GitHub Release
+containing the wheel, source archive, schema-3 manifest, checksums, both encrypted SBOMs,
+and the digest-bound Kubernetes YAML. One-day workflow artifacts are inter-job transport;
+the GitHub Release and GHCR hold the durable repository copies. Production retention still
+requires independently administered immutable mirrors.
 
 GitHub artifact attestations in private repositories require GitHub Enterprise Cloud. The
 workflow therefore enables the attestation step automatically only for public repositories.
@@ -141,14 +145,16 @@ For a private Enterprise Cloud repository, set the repository Actions variable
 the durable release will still be created and the unsupported attestation job will be
 skipped instead of failing publication.
 
-After downloading a release, verify the ciphertext and package checksums and, where
-present, the attested package against this repository:
+After downloading a release, verify every file checksum, confirm that the recorded image
+digest is pullable, and, where present, verify attestations against this repository:
 
 ```bash
 cd dist
 sha256sum --check SHA256SUMS
-gh attestation verify smart_factory_monitor-0.20.2-py3-none-any.whl \
+gh attestation verify smart_factory_monitor-0.21.0-py3-none-any.whl \
   --repo wilke26/smart-factory-monitor
+IMAGE_REFERENCE=$(python -c 'import json; print(json.load(open("release-manifest.json"))["container"]["reference"])')
+docker pull "$IMAGE_REFERENCE"
 ```
 
 Recover the private SBOM only in the controlled recovery environment. Supply an encrypted
@@ -159,18 +165,27 @@ then compare the recovered plaintext digest with `sbom.sha256` in
 ```bash
 export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
 python scripts/release_evidence_crypto.py decrypt \
-  --input smart_factory_monitor-0.20.2.ml-runtime.spdx.json.enc \
+  --input smart_factory_monitor-0.21.0.ml-runtime.spdx.json.enc \
   --output recovered.ml-runtime.spdx.json \
   --private-key /secure/release-evidence-private.pem \
   --private-key-password-env RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD \
-  --version 0.20.2 \
+  --version 0.21.0 \
+  --revision '<full-release-commit-sha>'
+python scripts/release_evidence_crypto.py decrypt \
+  --input smart_factory_monitor-0.21.0.container.spdx.json.enc \
+  --output recovered.container.spdx.json \
+  --private-key /secure/release-evidence-private.pem \
+  --private-key-password-env RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD \
+  --version 0.21.0 \
   --revision '<full-release-commit-sha>'
 python - <<'PY'
 import hashlib, json
 from pathlib import Path
 manifest = json.loads(Path("release-manifest.json").read_text())
-actual = hashlib.sha256(Path("recovered.ml-runtime.spdx.json").read_bytes()).hexdigest()
-assert actual == manifest["sbom"]["sha256"]
+ml_digest = hashlib.sha256(Path("recovered.ml-runtime.spdx.json").read_bytes()).hexdigest()
+container_digest = hashlib.sha256(Path("recovered.container.spdx.json").read_bytes()).hexdigest()
+assert ml_digest == manifest["sbom"]["sha256"]
+assert container_digest == manifest["container"]["sbom"]["sha256"]
 PY
 unset RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD
 ```
@@ -179,8 +194,8 @@ Private-repository verification requires Enterprise Cloud and an authenticated G
 identity with access.
 If the repository becomes public, new GitHub attestations use public Sigstore transparency
 infrastructure and must be treated as permanent public release records. Creating the tag is
-therefore an explicit publication decision. This package attestation does not cover a later
-container build; registry-bound container provenance remains separate work.
+therefore an explicit publication decision. v0.21 attests the published container name and
+digest separately from the checksummed release files when that facility is enabled.
 
 ## Model evaluation gate
 
@@ -270,9 +285,11 @@ point-in-time recovery. Private signing-key recovery remains a separate security
 ## Remaining production work
 
 A shared or production environment still needs managed broker ACL provisioning and secret
-rotation, managed backup scheduling and off-site retention, alert rules, durable metric collection, migration rollback
-policy, alert dead-letter/escalation policy, TimescaleDB retention/compression, human model
-approval integration, registry-generation retention, and independently managed key custody.
+rotation, managed backup scheduling and off-site retention, alert rules, durable metric
+collection, migration rollback policy, alert dead-letter/escalation policy, TimescaleDB
+retention/compression, human model approval integration, model-registry generation
+retention, GHCR retention and replication policy, digest-aware admission enforcement, and
+independently managed key custody.
 
 v0.15 provides a database-enforced append-only and hash-chained audit trail for model
 promotion and rollback. It records actor, reason, correlation ID, timestamp, previous and

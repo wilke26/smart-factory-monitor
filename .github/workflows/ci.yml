@@ -61,6 +61,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [quality, compose]
     runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+      release_revision: ${{ steps.version.outputs.release_commit }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -102,6 +105,7 @@ jobs:
           fi
           echo "Verified annotated release tag ${GITHUB_REF_NAME} at ${release_commit}."
           echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
+          echo "release_commit=${release_commit}" >> "${GITHUB_OUTPUT}"
       - name: Build package from locked tools
         run: |
           python -m pip install --require-hashes -r requirements/build.lock
@@ -149,7 +153,233 @@ jobs:
           cd dist
           sha256sum --check SHA256SUMS
           test "$(find . -maxdepth 1 -type f -name '*.spdx.json' | wc -l | tr -d ' ')" = "0"
-      - name: Pass encrypted release evidence to isolated jobs
+      - name: Pass encrypted source evidence to isolated jobs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smart-factory-monitor-source-evidence-${{ github.ref_name }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  release-container:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
+      digest: ${{ steps.publish.outputs.digest }}
+      reference: ${{ steps.publish.outputs.reference }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Define immutable container coordinates
+        id: coordinates
+        env:
+          RELEASE_REVISION: ${{ needs.release-build.outputs.release_revision }}
+          RELEASE_VERSION: ${{ needs.release-build.outputs.package_version }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_SHA}" = "${RELEASE_REVISION}"
+          image=$(printf '%s' "ghcr.io/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${image}:${RELEASE_VERSION}" >> "${GITHUB_OUTPUT}"
+      - name: Authenticate and require an unused release tag
+        env:
+          IMAGE_TAG: ${{ steps.coordinates.outputs.tag }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${REGISTRY_TOKEN}" | \
+            docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          set +e
+          inspection=$(docker buildx imagetools inspect "${IMAGE_TAG}" 2>&1)
+          status=$?
+          set -e
+          if [ "${status}" -eq 0 ]; then
+            echo "::error title=Container tag already exists::${IMAGE_TAG} is immutable release history and will not be overwritten."
+            exit 1
+          fi
+          if ! printf '%s\n' "${inspection}" | grep -Eiq 'not found|manifest unknown'; then
+            printf '%s\n' "${inspection}"
+            echo "::error title=Registry lookup failed::Could not prove that ${IMAGE_TAG} is unused."
+            exit 1
+          fi
+      - name: Build release container once
+        env:
+          IMAGE_TAG: ${{ steps.coordinates.outputs.tag }}
+          RELEASE_REVISION: ${{ needs.release-build.outputs.release_revision }}
+          RELEASE_VERSION: ${{ needs.release-build.outputs.package_version }}
+        run: |
+          created=$(git show -s --format=%cI "${RELEASE_REVISION}")
+          docker build --pull --platform linux/amd64 \
+            --build-arg DEPENDENCY_LOCK=requirements/ml.lock \
+            --label "org.opencontainers.image.created=${created}" \
+            --label "org.opencontainers.image.revision=${RELEASE_REVISION}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
+            --tag "${IMAGE_TAG}" .
+      - name: Scan exact release container before publication
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.coordinates.outputs.tag }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          scanners: vuln
+          severity: HIGH,CRITICAL
+      - name: Publish release container and resolve registry digest
+        id: publish
+        env:
+          IMAGE: ${{ steps.coordinates.outputs.image }}
+          IMAGE_TAG: ${{ steps.coordinates.outputs.tag }}
+        run: |
+          set -euo pipefail
+          docker push "${IMAGE_TAG}"
+          inspection=$(docker buildx imagetools inspect "${IMAGE_TAG}")
+          printf '%s\n' "${inspection}"
+          digest=$(printf '%s\n' "${inspection}" | awk '$1 == "Digest:" {print $2; exit}')
+          if ! printf '%s' "${digest}" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error title=Missing container digest::Registry did not return a canonical SHA-256 digest."
+            exit 1
+          fi
+          docker pull "${IMAGE}@${digest}"
+          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "reference=${IMAGE}@${digest}" >> "${GITHUB_OUTPUT}"
+      - name: Generate private SPDX container SBOM from published digest
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.publish.outputs.reference }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/smart_factory_monitor-${{ needs.release-build.outputs.package_version }}.container.spdx.json
+          syft-version: v1.42.3
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Encrypt container SBOM with the external release recipient
+        env:
+          IMAGE_TAG: ${{ steps.coordinates.outputs.tag }}
+          RECIPIENT_PUBLIC_KEY: ${{ secrets.RELEASE_EVIDENCE_RECIPIENT_PUBLIC_KEY }}
+          RELEASE_REVISION: ${{ needs.release-build.outputs.release_revision }}
+          RELEASE_VERSION: ${{ needs.release-build.outputs.package_version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RECIPIENT_PUBLIC_KEY}" ]; then
+            echo "::error title=Missing release evidence recipient::Configure RELEASE_EVIDENCE_RECIPIENT_PUBLIC_KEY before creating a release tag."
+            exit 1
+          fi
+          umask 077
+          mkdir container-dist
+          printf '%s\n' "${RECIPIENT_PUBLIC_KEY}" > "${RUNNER_TEMP}/release-evidence-recipient.pem"
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --volume "${GITHUB_WORKSPACE}:/workspace:ro" \
+            --volume "${RUNNER_TEMP}:/evidence" \
+            --volume "${GITHUB_WORKSPACE}/container-dist:/output" \
+            "${IMAGE_TAG}" \
+            python /workspace/scripts/release_evidence_crypto.py encrypt \
+              --input "/evidence/smart_factory_monitor-${RELEASE_VERSION}.container.spdx.json" \
+              --output "/output/smart_factory_monitor-${RELEASE_VERSION}.container.spdx.json.enc" \
+              --public-key /evidence/release-evidence-recipient.pem \
+              --version "${RELEASE_VERSION}" \
+              --revision "${RELEASE_REVISION}"
+      - name: Create digest-bound container evidence
+        env:
+          IMAGE: ${{ steps.publish.outputs.image }}
+          IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
+          RELEASE_REVISION: ${{ needs.release-build.outputs.release_revision }}
+          RELEASE_VERSION: ${{ needs.release-build.outputs.package_version }}
+        run: |
+          python scripts/create_container_evidence.py \
+            --directory container-dist \
+            --version "${RELEASE_VERSION}" \
+            --revision "${RELEASE_REVISION}" \
+            --image "${IMAGE}" \
+            --digest "${IMAGE_DIGEST}" \
+            --platform linux/amd64 \
+            --sbom "${RUNNER_TEMP}/smart_factory_monitor-${RELEASE_VERSION}.container.spdx.json" \
+            --encrypted-sbom "container-dist/smart_factory_monitor-${RELEASE_VERSION}.container.spdx.json.enc"
+          cd container-dist
+          sha256sum --check SHA256SUMS
+          test "$(find . -maxdepth 1 -type f -name '*.spdx.json' | wc -l | tr -d ' ')" = "0"
+      - name: Pass checksummed container evidence to unprivileged assembly
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smart-factory-monitor-container-evidence-${{ github.ref_name }}
+          path: container-dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  release-assemble:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release-build, release-container]
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+      digest: ${{ steps.container.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+      - name: Download encrypted source evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: smart-factory-monitor-source-evidence-${{ github.ref_name }}
+          path: source-dist
+      - name: Download encrypted container evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: smart-factory-monitor-container-evidence-${{ github.ref_name }}
+          path: container-dist
+      - name: Verify isolated evidence transfers
+        run: |
+          cd source-dist && sha256sum --check SHA256SUMS
+          cd ../container-dist && sha256sum --check SHA256SUMS
+      - name: Read fail-closed container identity
+        id: container
+        run: |
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          evidence = json.loads(Path("container-dist/container-evidence.json").read_text())
+          container = evidence["container"]
+          image = container["image"]
+          digest = container["digest"]
+          image_pattern = re.compile(
+              r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?::[0-9]+)?"
+              r"(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+$"
+          )
+          if not image_pattern.fullmatch(image):
+              raise SystemExit("container evidence contains an invalid image name")
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+              raise SystemExit("container evidence contains an invalid image digest")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+              output.write(f"image={image}\n")
+              output.write(f"digest={digest}\n")
+          PY
+      - name: Render digest-bound Kubernetes release manifest
+        env:
+          IMAGE: ${{ steps.container.outputs.image }}
+          IMAGE_DIGEST: ${{ steps.container.outputs.digest }}
+          RELEASE_VERSION: ${{ needs.release-build.outputs.package_version }}
+        run: |
+          python deploy/kubernetes/render-release.py \
+            --image "${IMAGE}" \
+            --digest "${IMAGE_DIGEST}" \
+            --output "${RUNNER_TEMP}/smart_factory_monitor-${RELEASE_VERSION}.kubernetes.yaml"
+      - name: Assemble final release evidence without publication permission
+        env:
+          RELEASE_VERSION: ${{ needs.release-build.outputs.package_version }}
+        run: |
+          python scripts/assemble_release_evidence.py \
+            --source-directory source-dist \
+            --container-directory container-dist \
+            --output-directory dist \
+            --deployment-manifest "${RUNNER_TEMP}/smart_factory_monitor-${RELEASE_VERSION}.kubernetes.yaml"
+          cd dist
+          sha256sum --check SHA256SUMS
+          test "$(find . -maxdepth 1 -type f -name '*.spdx.json' | wc -l | tr -d ' ')" = "0"
+      - name: Pass final encrypted release evidence to isolated jobs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: smart-factory-monitor-release-evidence-${{ github.ref_name }}
@@ -162,7 +392,7 @@ jobs:
       startsWith(github.ref, 'refs/tags/v') &&
       (github.event.repository.visibility == 'public' ||
       vars.ENABLE_GITHUB_ATTESTATIONS == 'true')
-    needs: release-build
+    needs: release-assemble
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -181,15 +411,20 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-checksums: dist/SHA256SUMS
+      - name: Attest published container digest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.release-assemble.outputs.image }}
+          subject-digest: ${{ needs.release-assemble.outputs.digest }}
 
   release-publish:
     if: >-
       always() &&
       startsWith(github.ref, 'refs/tags/v') &&
-      needs.release-build.result == 'success' &&
+      needs.release-assemble.result == 'success' &&
       (needs.release-attest.result == 'success' ||
       needs.release-attest.result == 'skipped')
-    needs: [release-build, release-attest]
+    needs: [release-assemble, release-attest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -209,17 +444,17 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --verify-tag \
             --title "Smart Factory Monitor ${GITHUB_REF_NAME}" \
-            --notes "Checksummed package artifacts and an encrypted private ML-runtime SBOM for ${GITHUB_SHA}."
+            --notes "Checksummed packages, digest-bound Kubernetes deployment evidence, and encrypted ML-runtime and container SBOMs for ${GITHUB_SHA}."
       - name: Report private-repository attestation mode
         if: >-
           github.event.repository.visibility != 'public' &&
           vars.ENABLE_GITHUB_ATTESTATIONS != 'true'
         run: |
-          echo "::notice title=GitHub attestation skipped::Private repositories require GitHub Enterprise Cloud. Durable encrypted release evidence was published."
+          echo "::notice title=GitHub attestation skipped::Private repositories require GitHub Enterprise Cloud. Durable encrypted package and container evidence was published."
           {
             echo "### GitHub provenance not created"
             echo "This private repository has not enabled Enterprise Cloud artifact attestations."
-            echo "Checksummed package evidence and the encrypted SBOM are retained by the GitHub Release."
+            echo "Checksummed package and container evidence plus both encrypted SBOMs are retained by the GitHub Release."
           } >> "${GITHUB_STEP_SUMMARY}"
 
   compose:

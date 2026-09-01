@@ -129,3 +129,10 @@ authenticated hybrid encryption so the exact SBOM can outlive its runner without
 public, requires the recipient private key to remain outside GitHub, and splits building,
 attesting, and publishing into separate jobs. Tests recover the ciphertext with a temporary
 key and reject weak keys, identity mismatches, output replacement, and modified envelopes.
+
+For v0.21, the release boundary is tested across registry and deployment semantics rather
+than inferred from a package build. Tests require one privileged container publication
+job, a canonical SHA-256 registry identity, an encrypted digest-derived container SBOM,
+an unprivileged assembly stage, and three Kubernetes image references bound to the same
+digest. Metadata assembly rejects modified artifacts, identity disagreement, malformed
+digests, unsupported platforms, and deployment manifests that do not bind every workload.

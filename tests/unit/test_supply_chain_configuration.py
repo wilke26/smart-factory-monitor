@@ -39,7 +39,7 @@ def test_release_evidence_is_restricted_to_trusted_release_tags() -> None:
     workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     release_build_job = workflow.split("  release-build:", maxsplit=1)[1].split(
-        "\n  release-attest:", maxsplit=1
+        "\n  release-container:", maxsplit=1
     )[0]
     assert "if: startsWith(github.ref, 'refs/tags/v')" in release_build_job
     assert "needs: [quality, compose]" in release_build_job
@@ -67,6 +67,45 @@ def test_release_evidence_is_restricted_to_trusted_release_tags() -> None:
     assert "contents: write" not in release_build_job
 
 
+def test_container_publication_and_evidence_assembly_use_isolated_permissions() -> None:
+    workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    container_job = workflow.split("  release-container:", maxsplit=1)[1].split(
+        "\n  release-assemble:", maxsplit=1
+    )[0]
+    assemble_job = workflow.split("  release-assemble:", maxsplit=1)[1].split(
+        "\n  release-attest:", maxsplit=1
+    )[0]
+
+    assert "needs: release-build" in container_job
+    assert "packages: write" in container_job
+    assert "contents: write" not in container_job
+    assert "attestations: write" not in container_job
+    assert "id-token: write" not in container_job
+    assert container_job.count("docker build --pull --platform linux/amd64") == 1
+    assert "DEPENDENCY_LOCK=requirements/ml.lock" in container_job
+    assert "Authenticate and require an unused release tag" in container_job
+    assert "Container tag already exists" in container_job
+    assert "Registry lookup failed" in container_job
+    assert "Scan exact release container before publication" in container_job
+    assert 'docker push "${IMAGE_TAG}"' in container_job
+    assert 'docker pull "${IMAGE}@${digest}"' in container_job
+    assert "image: ${{ steps.publish.outputs.reference }}" in container_job
+    assert "create_container_evidence.py" in container_job
+    assert "--platform linux/amd64" in container_job
+    assert "RELEASE_EVIDENCE_RECIPIENT_PUBLIC_KEY" in container_job
+    assert "upload-artifact: false" in container_job
+
+    assert "needs: [release-build, release-container]" in assemble_job
+    assert "packages: write" not in assemble_job
+    assert "contents: write" not in assemble_job
+    assert "attestations: write" not in assemble_job
+    assert "render-release.py" in assemble_job
+    assert "assemble_release_evidence.py" in assemble_job
+    assert "smart-factory-monitor-source-evidence" in assemble_job
+    assert "smart-factory-monitor-container-evidence" in assemble_job
+    assert "smart-factory-monitor-release-evidence" in assemble_job
+
+
 def test_attestation_and_publication_use_isolated_permissions() -> None:
     workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     attest_job = workflow.split("  release-attest:", maxsplit=1)[1].split(
@@ -76,18 +115,20 @@ def test_attestation_and_publication_use_isolated_permissions() -> None:
         "\n  compose:", maxsplit=1
     )[0]
 
-    assert "needs: release-build" in attest_job
+    assert "needs: release-assemble" in attest_job
     assert "attestations: write" in attest_job
     assert "id-token: write" in attest_job
     assert "contents: write" not in attest_job
     assert "github.event.repository.visibility == 'public'" in attest_job
     assert "vars.ENABLE_GITHUB_ATTESTATIONS == 'true'" in attest_job
     assert "subject-checksums: dist/SHA256SUMS" in attest_job
+    assert "subject-name: ${{ needs.release-assemble.outputs.image }}" in attest_job
+    assert "subject-digest: ${{ needs.release-assemble.outputs.digest }}" in attest_job
     assert "python -m build" not in attest_job
     assert "anchore/sbom-action" not in attest_job
 
-    assert "needs: [release-build, release-attest]" in publish_job
-    assert "needs.release-build.result == 'success'" in publish_job
+    assert "needs: [release-assemble, release-attest]" in publish_job
+    assert "needs.release-assemble.result == 'success'" in publish_job
     assert "needs.release-attest.result == 'success'" in publish_job
     assert "needs.release-attest.result == 'skipped'" in publish_job
     assert "contents: write" in publish_job
@@ -95,7 +136,7 @@ def test_attestation_and_publication_use_isolated_permissions() -> None:
     assert "attestations: write" not in publish_job
     assert 'gh release create "${GITHUB_REF_NAME}"' in publish_job
     assert "sha256sum --check SHA256SUMS" in publish_job
-    assert "Durable encrypted release evidence was published" in publish_job
+    assert "Durable encrypted package and container evidence was published" in publish_job
     assert "retention-days: 30" not in publish_job
     assert "sbom-path:" not in workflow
     assert "push-to-registry: true" not in workflow

@@ -56,4 +56,5 @@ registry-bound release decision.
   retention, but CI deliberately discards it when the runner ends.
 - If the repository becomes public, operators must treat each new release attestation as a
   permanent public transparency event and review the release contents before tagging.
-- Package provenance does not establish the provenance of a later container build.
+- Package provenance alone does not establish container provenance; ADR 0023 adds a
+  separately identified and optionally attested registry digest.

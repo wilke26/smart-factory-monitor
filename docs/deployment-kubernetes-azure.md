@@ -66,7 +66,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.20.2 \
+  --image smart-factory-monitor:0.21.0 \
   --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \
@@ -88,16 +88,18 @@ kubectl -n smart-factory rollout status deployment/smart-factory-consumer
 kubectl -n smart-factory rollout status deployment/smart-factory-alert-dispatcher
 ```
 
-Obtain `IMAGE_DIGEST` from the successful registry build or a separate authenticated ACR
-lookup and verify it in the release record. The renderer rejects a tag, validates the
-digest syntax, and fails unless consumer, simulator, and alert dispatcher are all bound
-to the exact same immutable reference. Never apply the mutable-tag overlay as the
-production release artifact.
+For v0.21, obtain `IMAGE_DIGEST` and the complete rendered YAML from the matching GitHub
+Release. The release workflow builds one `linux/amd64` image with the ML dependency lock,
+scans it before publication, pushes the version tag to GHCR, resolves the registry digest,
+and records `ghcr.io/<owner>/<repository>@sha256:...` in manifest schema 3. The attached
+Kubernetes YAML binds consumer, simulator, and alert dispatcher to exactly that reference.
+The semantic registry tag is only a discovery alias and must never be the production
+rollout input.
 
-When enabled for a public or Enterprise Cloud repository, the v0.20 GitHub attestation
-covers the Python wheel, source archive, and release manifest, not a separately built
-container image. A future registry publication flow must bind the container digest to its
-own provenance before admission policy treats it as verified.
+When enabled for a public or Enterprise Cloud repository, GitHub separately attests the
+checksummed release files and the published container name plus digest. Without that
+facility, the checksummed release manifest, encrypted container SBOM, digest pull, and
+attached deployment YAML remain independently verifiable evidence.
 
 For an ABAC-enabled ACR, use the repository-reader role assignment described by Azure
 instead of `--attach-acr`. The Azure overlay uses `azurefile-csi-premium` because the model

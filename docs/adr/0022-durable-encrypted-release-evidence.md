@@ -62,7 +62,8 @@ with `release-manifest.json` and must remain part of operational drills.
   gate cannot publish release evidence.
 - GitHub Release deletion or repository deletion can still remove the durable assets.
   Regulatory retention therefore requires an independently administered archive.
-- This package evidence still does not establish provenance for a later container build.
+- ADR 0023 extends this package evidence with a separately authorized, digest-bound
+  container publication, encrypted container SBOM, and Kubernetes deployment manifest.
 
 ## Rejected alternatives
 
