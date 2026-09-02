@@ -68,7 +68,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.23.0 \
+  --image smart-factory-monitor:0.24.0 \
   --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \
@@ -90,7 +90,7 @@ kubectl -n smart-factory rollout status deployment/smart-factory-consumer
 kubectl -n smart-factory rollout status deployment/smart-factory-alert-dispatcher
 ```
 
-For v0.23, obtain `IMAGE_DIGEST` and the complete rendered YAML from the matching GitHub
+For v0.24, obtain `IMAGE_DIGEST` and the complete rendered YAML from the matching GitHub
 Release. The release workflow builds one `linux/amd64` image with the ML dependency lock,
 scans it before publication, pushes the version tag to GHCR, resolves the registry digest,
 and records `ghcr.io/<owner>/<repository>@sha256:...` in manifest schema 3. The attached
@@ -112,7 +112,7 @@ kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding \
 The Azure namespace carries
 `security.smart-factory-monitor.io/require-digest-images=true`. After admission
 registration has propagated, use a server-side dry run to confirm that a Deployment with
-an image such as `smart-factory-monitor:0.23.0` is denied. Only then apply the
+an image such as `smart-factory-monitor:0.24.0` is denied. Only then apply the
 digest-bound release YAML. The ordinary Azure overlay deliberately retains a review tag
 and will be rejected in the protected namespace.
 

@@ -16,6 +16,9 @@ backups
 audit-checkpoints
 release-evidence-private.pem
 release-evidence-public.pem
+release-signing-private.pem
+release-signing-public.pem
+*.release-signature.json
 recovered*.spdx.json
 tests
 docs

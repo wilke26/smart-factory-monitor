@@ -11,10 +11,19 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+import smart_factory.release_verification as verification_module
 from smart_factory.release_evidence_crypto import encrypt_release_evidence
+from smart_factory.release_signature import (
+    generate_signing_key_pair,
+    release_signature_name,
+    sign_release_bundle,
+)
+from smart_factory.release_signature import (
+    main as signature_main,
+)
 from smart_factory.release_verification import main, verify_release_bundle
 
-VERSION = "0.23.0"
+VERSION = "0.24.0"
 REVISION = "a" * 40
 DIGEST = "sha256:" + "b" * 64
 IMAGE = "ghcr.io/wilke26/smart-factory-monitor"
@@ -39,7 +48,11 @@ def _record(path: Path, media_type: str | None = None) -> dict[str, Any]:
 
 def _write_checksums(directory: Path) -> None:
     targets = sorted(
-        (path for path in directory.iterdir() if path.name != "SHA256SUMS"),
+        (
+            path
+            for path in directory.iterdir()
+            if path.name != "SHA256SUMS" and not path.name.endswith(".release-signature.json")
+        ),
         key=lambda path: path.name,
     )
     (directory / "SHA256SUMS").write_text(
@@ -153,6 +166,14 @@ def _copy_bundle(source: Path, destination: Path) -> Path:
     return Path(shutil.copytree(source, destination))
 
 
+def _signing_keys(directory: Path) -> tuple[Path, Path]:
+    directory.mkdir()
+    private_path = directory / "release-signing-private.pem"
+    public_path = directory / "release-signing-public.pem"
+    generate_signing_key_pair(private_path, public_path, PASSWORD)
+    return private_path, public_path
+
+
 def test_verifies_complete_bundle_without_network_or_private_material(
     release_fixture: tuple[Path, Path, Path],
 ) -> None:
@@ -263,7 +284,7 @@ def test_rejects_deployment_not_bound_to_release_digest(
     manifest = json.loads((candidate / "release-manifest.json").read_text(encoding="utf-8"))
     deployment_path = candidate / manifest["container"]["deployment_manifest"]["name"]
     deployment_path.write_text(
-        deployment_path.read_text(encoding="utf-8").replace(REFERENCE, f"{IMAGE}:0.23.0", 1),
+        deployment_path.read_text(encoding="utf-8").replace(REFERENCE, f"{IMAGE}:{VERSION}", 1),
         encoding="utf-8",
     )
     manifest["container"]["deployment_manifest"] = _record(deployment_path, "application/yaml")
@@ -325,3 +346,219 @@ def test_cli_emits_machine_readable_result(
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "verified"
     assert result["version"] == VERSION
+
+
+def test_signs_and_authenticates_the_complete_release_bundle(
+    tmp_path: Path, release_fixture: tuple[Path, Path, Path]
+) -> None:
+    bundle, _, _ = release_fixture
+    candidate = _copy_bundle(bundle, tmp_path / "signed")
+    private_path, public_path = _signing_keys(tmp_path / "keys")
+    signature_path = candidate / release_signature_name(VERSION)
+
+    sign_release_bundle(candidate, signature_path, private_path, PASSWORD)
+    with pytest.raises(ValueError, match="membership"):
+        verify_release_bundle(candidate)
+    result = verify_release_bundle(
+        candidate,
+        signature_path=signature_path,
+        signing_public_key_path=public_path,
+    )
+
+    assert private_path.stat().st_mode & 0o777 == 0o600
+    assert result["release_signature"]["algorithm"] == "Ed25519"
+    assert len(result["release_signature"]["signing_key_sha256"]) == 64
+
+
+def test_rejects_tampered_release_signature(
+    tmp_path: Path, release_fixture: tuple[Path, Path, Path]
+) -> None:
+    bundle, _, _ = release_fixture
+    candidate = _copy_bundle(bundle, tmp_path / "tampered-signature")
+    private_path, public_path = _signing_keys(tmp_path / "keys")
+    signature_path = candidate / release_signature_name(VERSION)
+    sign_release_bundle(candidate, signature_path, private_path, PASSWORD)
+    document = json.loads(signature_path.read_text(encoding="utf-8"))
+    encoded = document["signature"]
+    document["signature"] = ("A" if encoded[0] != "A" else "B") + encoded[1:]
+    signature_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="authentication failed"):
+        verify_release_bundle(
+            candidate,
+            signature_path=signature_path,
+            signing_public_key_path=public_path,
+        )
+
+
+def test_rejects_internally_rechecksummed_bundle_after_signing(
+    tmp_path: Path, release_fixture: tuple[Path, Path, Path]
+) -> None:
+    bundle, _, _ = release_fixture
+    candidate = _copy_bundle(bundle, tmp_path / "rechecksummed")
+    private_path, public_path = _signing_keys(tmp_path / "keys")
+    signature_path = candidate / release_signature_name(VERSION)
+    sign_release_bundle(candidate, signature_path, private_path, PASSWORD)
+    manifest = json.loads((candidate / "release-manifest.json").read_text(encoding="utf-8"))
+    wheel = candidate / manifest["artifacts"][0]["name"]
+    wheel.write_bytes(b"attacker-replaced-wheel")
+    manifest["artifacts"][0] = _record(wheel, "application/zip")
+    _rewrite_manifest(candidate, manifest)
+
+    with pytest.raises(ValueError, match="different release evidence"):
+        verify_release_bundle(
+            candidate,
+            signature_path=signature_path,
+            signing_public_key_path=public_path,
+        )
+
+
+def test_rejects_signature_replayed_for_another_revision(
+    tmp_path: Path, release_fixture: tuple[Path, Path, Path]
+) -> None:
+    bundle, _, _ = release_fixture
+    candidate = _copy_bundle(bundle, tmp_path / "replayed")
+    private_path, public_path = _signing_keys(tmp_path / "keys")
+    signature_path = candidate / release_signature_name(VERSION)
+    sign_release_bundle(candidate, signature_path, private_path, PASSWORD)
+    manifest = json.loads((candidate / "release-manifest.json").read_text(encoding="utf-8"))
+    manifest["revision"] = "e" * 40
+    for metadata in (manifest["sbom"], manifest["container"]["sbom"]):
+        encrypted_path = candidate / metadata["encrypted"]["name"]
+        envelope = json.loads(encrypted_path.read_text(encoding="utf-8"))
+        envelope["authenticated_release"]["revision"] = manifest["revision"]
+        encrypted_path.write_text(json.dumps(envelope), encoding="utf-8")
+        metadata["encrypted"].update(_record(encrypted_path))
+    _rewrite_manifest(candidate, manifest)
+
+    with pytest.raises(ValueError, match="different release evidence"):
+        verify_release_bundle(
+            candidate,
+            signature_path=signature_path,
+            signing_public_key_path=public_path,
+        )
+
+
+def test_rejects_wrong_release_signing_key(
+    tmp_path: Path, release_fixture: tuple[Path, Path, Path]
+) -> None:
+    bundle, _, _ = release_fixture
+    candidate = _copy_bundle(bundle, tmp_path / "wrong-signing-key")
+    private_path, _ = _signing_keys(tmp_path / "keys")
+    _, wrong_public_path = _signing_keys(tmp_path / "other-keys")
+    signature_path = candidate / release_signature_name(VERSION)
+    sign_release_bundle(candidate, signature_path, private_path, PASSWORD)
+
+    with pytest.raises(ValueError, match="different release evidence or key"):
+        verify_release_bundle(
+            candidate,
+            signature_path=signature_path,
+            signing_public_key_path=wrong_public_path,
+        )
+
+
+def test_refuses_unencrypted_or_overwritten_release_signing_material(
+    tmp_path: Path, release_fixture: tuple[Path, Path, Path]
+) -> None:
+    bundle, _, _ = release_fixture
+    candidate = _copy_bundle(bundle, tmp_path / "write-once")
+    private_path, _ = _signing_keys(tmp_path / "keys")
+    signature_path = candidate / release_signature_name(VERSION)
+
+    with pytest.raises(ValueError, match="password must not be empty"):
+        sign_release_bundle(candidate, signature_path, private_path, b"")
+    with pytest.raises(ValueError):
+        sign_release_bundle(candidate, signature_path, private_path, b"wrong-password")
+    sign_release_bundle(candidate, signature_path, private_path, PASSWORD)
+    with pytest.raises(ValueError, match="refusing to replace"):
+        sign_release_bundle(candidate, signature_path, private_path, PASSWORD)
+
+
+def test_release_signature_cli_generates_keys_and_signs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    release_fixture: tuple[Path, Path, Path],
+) -> None:
+    bundle, _, _ = release_fixture
+    candidate = _copy_bundle(bundle, tmp_path / "cli-signed")
+    private_path = tmp_path / "cli-private.pem"
+    public_path = tmp_path / "cli-public.pem"
+    signature_path = candidate / release_signature_name(VERSION)
+    monkeypatch.setenv("TEST_RELEASE_SIGNING_PASSWORD", PASSWORD.decode("ascii"))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "smart-factory-release-signature",
+            "generate-key",
+            "--private-key",
+            str(private_path),
+            "--public-key",
+            str(public_path),
+            "--private-key-password-env",
+            "TEST_RELEASE_SIGNING_PASSWORD",
+        ],
+    )
+    signature_main()
+    assert "Release-signing key SHA-256" in capsys.readouterr().out
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "smart-factory-release-signature",
+            "sign",
+            str(candidate),
+            "--output",
+            str(signature_path),
+            "--private-key",
+            str(private_path),
+            "--private-key-password-env",
+            "TEST_RELEASE_SIGNING_PASSWORD",
+        ],
+    )
+    signature_main()
+    assert "Created release signature" in capsys.readouterr().out
+
+    result = verify_release_bundle(
+        candidate,
+        signature_path=signature_path,
+        signing_public_key_path=public_path,
+    )
+    assert result["release_signature"]["algorithm"] == "Ed25519"
+
+
+def test_requires_signature_and_public_key_together(
+    tmp_path: Path, release_fixture: tuple[Path, Path, Path]
+) -> None:
+    bundle, _, _ = release_fixture
+
+    with pytest.raises(ValueError, match="provided together"):
+        verify_release_bundle(bundle, signature_path=tmp_path / release_signature_name(VERSION))
+
+
+def test_rejects_bad_signature_before_private_sbom_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    release_fixture: tuple[Path, Path, Path],
+) -> None:
+    bundle, recovery_private_path, _ = release_fixture
+    candidate = _copy_bundle(bundle, tmp_path / "authenticate-first")
+    signing_private_path, signing_public_path = _signing_keys(tmp_path / "keys")
+    signature_path = candidate / release_signature_name(VERSION)
+    sign_release_bundle(candidate, signature_path, signing_private_path, PASSWORD)
+    signature_path.write_text("{}\n", encoding="utf-8")
+
+    def unexpected_recovery(*args: object, **kwargs: object) -> dict[str, dict[str, Any]]:
+        raise AssertionError("private SBOM recovery ran before signature authentication")
+
+    monkeypatch.setattr(verification_module, "_recover_sboms", unexpected_recovery)
+    with pytest.raises(ValueError, match="signature document is invalid"):
+        verify_release_bundle(
+            candidate,
+            private_key_path=recovery_private_path,
+            private_key_password=PASSWORD,
+            signature_path=signature_path,
+            signing_public_key_path=signing_public_path,
+        )

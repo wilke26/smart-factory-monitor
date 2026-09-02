@@ -24,6 +24,9 @@ docs/Smart_Factory_Monitor_Analysebericht*.docx
 audit-checkpoints/
 release-evidence-private.pem
 release-evidence-public.pem
+release-signing-private.pem
+release-signing-public.pem
+*.release-signature.json
 recovered*.spdx.json
 docker/mosquitto/data/*
 docker/mosquitto/log/*

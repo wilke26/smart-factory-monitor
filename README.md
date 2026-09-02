@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.23.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.24.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -59,6 +59,11 @@ v0.23 adds one installable, network-independent verifier for the complete releas
 It rejects missing, additional, linked, renamed, altered, cross-release, or mutable-image
 evidence and can optionally authenticate the external recipient key and recover both
 private SBOMs in a temporary protected directory.
+v0.24 lets an independently controlled operator sign the complete verified bundle with a
+dedicated encrypted Ed25519 key after publication. The detached signature binds version,
+commit, container reference, manifest, and checksum root without giving GitHub the private
+signing key; the same offline verifier authenticates it against a separately distributed
+public key.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -565,6 +570,7 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0023: digest-bound container releases](docs/adr/0023-digest-bound-container-releases.md)
 - [ADR 0024: digest-only deployment admission](docs/adr/0024-digest-only-deployment-admission.md)
 - [ADR 0025: offline complete release-bundle verification](docs/adr/0025-offline-release-bundle-verification.md)
+- [ADR 0026: externally anchored release-bundle signatures](docs/adr/0026-external-release-bundle-signatures.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)

@@ -152,3 +152,10 @@ encrypted RSA key additionally proves public-key matching and authenticated reco
 both SPDX documents without leaving plaintext beside the release assets. The release
 assembly job runs the same offline verifier before any publishing-capable job receives the
 bundle.
+
+For v0.24, tests separate an internally consistent bundle from an externally authenticated
+one. They create encrypted Ed25519 signing material, sign the verified checksum root, and
+then reject a modified signature, an internally rechecksummed replacement, a receipt
+replayed against another commit, a different public key, an empty password, and output
+replacement. CI configuration tests also prove that no release-signing private key,
+password, or signing command enters GitHub Actions.

@@ -165,6 +165,9 @@ def test_release_recovery_material_is_excluded_from_source_and_build_context() -
     for ignored_name in (
         "release-evidence-private.pem",
         "release-evidence-public.pem",
+        "release-signing-private.pem",
+        "release-signing-public.pem",
+        "*.release-signature.json",
         "recovered*.spdx.json",
     ):
         assert ignored_name in gitignore
@@ -175,3 +178,12 @@ def test_package_exposes_offline_release_verifier() -> None:
     project = (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     assert 'smart-factory-verify-release = "smart_factory.release_verification:main"' in project
+    assert 'smart-factory-release-signature = "smart_factory.release_signature:main"' in project
+
+
+def test_ci_never_receives_external_release_signing_authority() -> None:
+    workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "RELEASE_SIGNING_PRIVATE_KEY" not in workflow
+    assert "RELEASE_SIGNING_KEY_PASSWORD" not in workflow
+    assert "smart-factory-release-signature sign" not in workflow

@@ -1,4 +1,4 @@
-# Architecture v0.23.0
+# Architecture v0.24.0
 
 ## Scope
 
@@ -44,6 +44,10 @@ Version 0.23 makes the schema-3 release directory an independently verifiable ob
 single offline command validates exact membership, all recorded identities and checksums,
 the encrypted-envelope bindings, the container reference, and every deployment image;
 optional external key material also proves the recipient and recovers both private SBOMs.
+Version 0.24 adds a distinct post-publication trust boundary. An external operator signs
+the verified checksum root, manifest, release identity, and container reference with a
+dedicated Ed25519 key that GitHub never receives. Offline consumers authenticate the
+detached signature with an independently distributed public key.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -252,6 +256,15 @@ three Deployment references without network access. Cryptographic SBOM recovery 
 optional and lazily loaded, so checksum and metadata validation needs only the base
 package. Recovered plaintext exists only in a mode-0700 temporary directory and is checked
 against its manifest digest, SPDX version, and package count before deletion.
+
+v0.24 distinguishes consistency from authenticity. The seven-file release bundle remains
+CI-produced and independently checksummed. A controlled operator first verifies those
+files, then creates an eighth detached signature asset. Its canonical signed payload binds
+the SHA-256 of `SHA256SUMS` and `release-manifest.json`, the version, full commit, product,
+and digest-qualified container reference plus the Ed25519 public-key fingerprint. The
+signing private key is encrypted, write-once generated, excluded from source and container
+contexts, and never supplied to a GitHub workflow. The public key and fingerprint must be
+distributed through an independent trusted channel.
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,

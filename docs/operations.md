@@ -113,7 +113,7 @@ write permission.
 
 ## Release provenance and SBOM privacy
 
-The release jobs run only for an annotated semantic release tag such as `v0.23.0`. The tag
+The release jobs run only for an annotated semantic release tag such as `v0.24.0`. The tag
 must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
 `origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
 created. Ordinary `main` pushes and pull requests do not create release evidence,
@@ -169,11 +169,11 @@ digest is pullable, and, where present, verify attestations against this reposit
 ```bash
 cd dist
 smart-factory-verify-release . \
-  --expected-version 0.23.0 \
+  --expected-version 0.24.0 \
   --expected-revision '<full-release-commit-sha>'
 IMAGE_REFERENCE=$(python -c 'import json; print(json.load(open("release-manifest.json"))["container"]["reference"])')
 docker pull "$IMAGE_REFERENCE"
-gh attestation verify smart_factory_monitor-0.23.0-py3-none-any.whl \
+gh attestation verify smart_factory_monitor-0.24.0-py3-none-any.whl \
   --repo wilke26/smart-factory-monitor
 ```
 
@@ -191,7 +191,7 @@ dependency:
 ```bash
 export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
 smart-factory-verify-release . \
-  --expected-version 0.23.0 \
+  --expected-version 0.24.0 \
   --expected-revision '<full-release-commit-sha>' \
   --public-key /secure/release-evidence-public.pem \
   --private-key /secure/release-evidence-private.pem \
@@ -203,6 +203,64 @@ unset RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD
 The verifier decrypts into a protected temporary directory, validates each plaintext
 SHA-256, SPDX 2.x marker, and package count, then deletes the recovered copies. It never
 writes plaintext into the downloaded release directory.
+
+### External release-bundle signature
+
+The encrypted RSA recovery key is not reused for signing. Generate a separate Ed25519 key
+pair once in the controlled operator environment. Obtain a strong password from the
+secret manager through an environment variable; never pass it as a command-line value:
+
+```bash
+umask 077
+RELEASE_SIGNING_KEY_DIRECTORY="$HOME/private-keys/smart-factory-monitor-release-signing"
+mkdir -p "$RELEASE_SIGNING_KEY_DIRECTORY"
+export RELEASE_SIGNING_KEY_PASSWORD='<from-secret-manager>'
+smart-factory-release-signature generate-key \
+  --private-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-private.pem" \
+  --public-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-public.pem" \
+  --private-key-password-env RELEASE_SIGNING_KEY_PASSWORD
+unset RELEASE_SIGNING_KEY_PASSWORD
+```
+
+Store the encrypted private key and password under separate controlled recovery policy.
+Distribute the public key and the printed SHA-256 fingerprint independently from GitHub.
+The files are write-once: key generation and signing refuse existing destinations.
+
+After GitHub has published the seven normal v0.24 assets, download and verify them, then
+create and authenticate the detached signature locally before uploading that public
+signature document as the eighth release asset:
+
+```bash
+release_directory=$(mktemp -d)
+release_revision=$(git rev-list -n 1 v0.24.0)
+gh release download v0.24.0 --dir "$release_directory"
+smart-factory-verify-release "$release_directory" \
+  --expected-version 0.24.0 \
+  --expected-revision "$release_revision"
+
+export RELEASE_SIGNING_KEY_PASSWORD='<from-secret-manager>'
+signature_path="$release_directory/smart_factory_monitor-0.24.0.release-signature.json"
+smart-factory-release-signature sign "$release_directory" \
+  --output "$signature_path" \
+  --private-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-private.pem" \
+  --private-key-password-env RELEASE_SIGNING_KEY_PASSWORD
+unset RELEASE_SIGNING_KEY_PASSWORD
+
+smart-factory-verify-release "$release_directory" \
+  --expected-version 0.24.0 \
+  --expected-revision "$release_revision" \
+  --signature "$signature_path" \
+  --signing-public-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-public.pem" \
+  --json
+gh release upload v0.24.0 "$signature_path"
+```
+
+On later downloads, pass both `--signature` and `--signing-public-key`. Signature
+authentication completes before any optional private-SBOM recovery. Without those
+arguments, the verifier deliberately rejects the unexpected eighth file rather than
+silently treating an unauthenticated signature as trusted. The signature proves control
+of the external Ed25519 key over the exact bundle; it does not replace registry
+availability checks, GitHub provenance, or immutable off-site retention.
 
 GitHub attestation verification for a private repository requires Enterprise Cloud and an
 authenticated GitHub CLI identity with access; the offline bundle verifier does not.

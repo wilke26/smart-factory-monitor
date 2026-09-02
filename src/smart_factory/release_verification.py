@@ -228,7 +228,11 @@ def verify_release_bundle(
     public_key_path: Path | None = None,
     private_key_path: Path | None = None,
     private_key_password: bytes | None = None,
+    signature_path: Path | None = None,
+    signing_public_key_path: Path | None = None,
 ) -> dict[str, Any]:
+    if (signature_path is None) != (signing_public_key_path is None):
+        raise ValueError("release signature and signing public key must be provided together")
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("release bundle must be a real directory")
     for path in directory.iterdir():
@@ -358,6 +362,13 @@ def verify_release_bundle(
         container_encrypted_name,
         deployment_name,
     }
+    expected_checksum_names = expected_files - {"SHA256SUMS"}
+    if signature_path is not None:
+        expected_signature_name = f"{stem}.release-signature.json"
+        if signature_path.name != expected_signature_name:
+            raise ValueError(f"release signature must be named {expected_signature_name}")
+        if signature_path.parent.resolve() == directory.resolve():
+            expected_files.add(expected_signature_name)
     actual_files = {path.name for path in directory.iterdir()}
     if actual_files != expected_files:
         missing = sorted(expected_files - actual_files)
@@ -366,12 +377,33 @@ def verify_release_bundle(
             f"release bundle membership is invalid: missing={missing}, unexpected={unexpected}"
         )
     checksums = _parse_checksums(directory / "SHA256SUMS")
-    expected_checksum_names = expected_files - {"SHA256SUMS"}
     if set(checksums) != expected_checksum_names:
         raise ValueError("SHA256SUMS membership does not match the release bundle")
     for name, expected_digest in checksums.items():
         if _sha256(directory / name) != expected_digest:
             raise ValueError(f"checksum mismatch: {name}")
+
+    result: dict[str, Any] = {
+        "container": {"platform": platform, "reference": reference},
+        "files_checked": len(expected_checksum_names),
+        "recipient_key_sha256": ml_recipient,
+        "revision": revision,
+        "status": "verified",
+        "version": version,
+    }
+    if signature_path is not None and signing_public_key_path is not None:
+        try:
+            from smart_factory.release_signature import verify_release_signature
+        except ImportError as error:
+            raise ValueError(
+                "release signature verification requires the release-evidence extra"
+            ) from error
+        result["release_signature"] = verify_release_signature(
+            directory,
+            signature_path,
+            signing_public_key_path,
+            result,
+        )
 
     if public_key_path is not None:
         try:
@@ -392,14 +424,6 @@ def verify_release_bundle(
             private_key_password,
         )
 
-    result: dict[str, Any] = {
-        "container": {"platform": platform, "reference": reference},
-        "files_checked": len(expected_checksum_names),
-        "recipient_key_sha256": ml_recipient,
-        "revision": revision,
-        "status": "verified",
-        "version": version,
-    }
     if public_key_path is not None:
         result["public_key_verified"] = True
     if recovered is not None:
@@ -416,6 +440,8 @@ def main() -> None:
     parser.add_argument("--public-key", type=Path)
     parser.add_argument("--private-key", type=Path)
     parser.add_argument("--private-key-password-env")
+    parser.add_argument("--signature", type=Path)
+    parser.add_argument("--signing-public-key", type=Path)
     parser.add_argument("--json", action="store_true", dest="json_output")
     arguments = parser.parse_args()
     try:
@@ -435,6 +461,8 @@ def main() -> None:
             public_key_path=arguments.public_key,
             private_key_path=arguments.private_key,
             private_key_password=password,
+            signature_path=arguments.signature,
+            signing_public_key_path=arguments.signing_public_key,
         )
     except (OSError, TypeError, ValueError) as error:
         if arguments.json_output:
@@ -453,6 +481,8 @@ def main() -> None:
             print("Recipient public key: verified")
         if "recovered_sboms" in result:
             print("Private SBOMs: authenticated, recovered, and verified")
+        if "release_signature" in result:
+            print("External release signature: verified")
 
 
 if __name__ == "__main__":
