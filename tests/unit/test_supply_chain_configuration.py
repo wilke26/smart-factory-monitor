@@ -194,3 +194,16 @@ def test_ci_never_receives_external_release_signing_authority() -> None:
     assert "RELEASE_SIGNING_PRIVATE_KEY" not in workflow
     assert "RELEASE_SIGNING_KEY_PASSWORD" not in workflow
     assert "smart-factory-release-signature sign" not in workflow
+
+
+def test_colocated_audit_root_is_explicitly_limited_to_local_development() -> None:
+    compose = (REPOSITORY_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    environment_example = (REPOSITORY_ROOT / ".env.example").read_text(encoding="utf-8")
+    keyring = (REPOSITORY_ROOT / "src/smart_factory/infrastructure/audit/keyring.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert compose.count('AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT: "true"') == 3
+    assert "AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT=false" in environment_example
+    assert "AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID=" in environment_example
+    assert "trusted_root_key_id_path" not in keyring

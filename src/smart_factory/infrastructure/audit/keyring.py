@@ -51,23 +51,36 @@ def canonical_transition_payload(transition: AuditKeyTransition) -> bytes:
 
 
 class AuditAttestationKeyring:
-    def __init__(self, directory: Path, trusted_root_key_id_path: Path) -> None:
+    def __init__(self, directory: Path, trusted_root_key_id: str) -> None:
+        if not KEY_ID_PATTERN.fullmatch(trusted_root_key_id):
+            raise AuditCheckpointError("trusted root audit key ID is invalid")
         self._directory = directory
         self._keys_directory = directory / "keys"
         self._transitions_directory = directory / "transitions"
         self._active_key_id_path = directory / "active-key-id"
         self._rotation_lock_path = directory / ".rotation.lock"
-        self._trusted_root_key_id_path = trusted_root_key_id_path
+        self._trusted_root_key_id = trusted_root_key_id
 
-    def initialize(self, public_key_path: Path) -> str:
+    def initialize(
+        self,
+        public_key_path: Path,
+        *,
+        expected_chain_id: str | None = None,
+    ) -> str:
         key_id = public_key_id(public_key_path)
+        if (
+            key_id != self._trusted_root_key_id
+            and not self.key_path(self._trusted_root_key_id).is_file()
+        ):
+            raise AuditCheckpointError("initial audit key does not match trusted root")
+        if key_id != self._trusted_root_key_id and expected_chain_id is None:
+            raise AuditCheckpointError("audit chain ID is required to initialize a rotated key")
         self._keys_directory.mkdir(parents=True, exist_ok=True)
         self._transitions_directory.mkdir(parents=True, exist_ok=True)
         self._write_once(self.key_path(key_id), public_key_path.read_bytes(), 0o644)
-        if not self._trusted_root_key_id_path.exists():
-            self._write_once(self._trusted_root_key_id_path, f"{key_id}\n".encode(), 0o644)
-        else:
-            self.trusted_root_key_id()
+        if key_id != self._trusted_root_key_id:
+            assert expected_chain_id is not None
+            self.resolve_trusted_key(key_id, expected_chain_id=expected_chain_id)
         self._replace(self._active_key_id_path, f"{key_id}\n".encode(), 0o644)
         return key_id
 
@@ -75,7 +88,15 @@ class AuditAttestationKeyring:
         return self._read_key_id(self._active_key_id_path, "active audit key ID")
 
     def trusted_root_key_id(self) -> str:
-        return self._read_key_id(self._trusted_root_key_id_path, "trusted root audit key ID")
+        return self._trusted_root_key_id
+
+    @classmethod
+    def initialize_development_root_marker(cls, path: Path, key_id: str) -> str:
+        """Create or read the explicitly weaker co-located development root."""
+        if not KEY_ID_PATTERN.fullmatch(key_id):
+            raise AuditCheckpointError("trusted root audit key ID is invalid")
+        cls._write_once(path, f"{key_id}\n".encode(), 0o644)
+        return cls._read_key_id(path, "trusted root audit key ID")
 
     @contextmanager
     def exclusive_rotation(self) -> Iterator[None]:

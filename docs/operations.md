@@ -113,7 +113,7 @@ write permission.
 
 ## Release provenance and SBOM privacy
 
-The release jobs run only for an annotated semantic release tag such as `v0.25.0`. The tag
+The release jobs run only for an annotated semantic release tag such as `v0.26.0`. The tag
 must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
 `origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
 created. Ordinary `main` pushes and pull requests do not create release evidence,
@@ -170,12 +170,12 @@ digest is pullable, and, where present, verify attestations against this reposit
 ```bash
 cd dist
 smart-factory-verify-release . \
-  --expected-version 0.25.0 \
+  --expected-version 0.26.0 \
   --expected-revision '<full-release-commit-sha>' \
   --expected-image-reference 'ghcr.io/wilke26/smart-factory-monitor@sha256:<full-digest>'
 IMAGE_REFERENCE=$(python -c 'import json; print(json.load(open("release-manifest.json"))["container"]["reference"])')
 docker pull "$IMAGE_REFERENCE"
-gh attestation verify smart_factory_monitor-0.25.0-py3-none-any.whl \
+gh attestation verify smart_factory_monitor-0.26.0-py3-none-any.whl \
   --repo wilke26/smart-factory-monitor
 ```
 
@@ -193,7 +193,7 @@ dependency:
 ```bash
 export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
 smart-factory-verify-release . \
-  --expected-version 0.25.0 \
+  --expected-version 0.26.0 \
   --expected-revision '<full-release-commit-sha>' \
   --public-key /secure/release-evidence-public.pem \
   --private-key /secure/release-evidence-private.pem \
@@ -239,8 +239,8 @@ command. The signer copies the bundle into a protected snapshot before verificat
 concurrent local replacement cannot change the bytes that receive the signature:
 
 ```bash
-release_tag=v0.25.0
-release_version=0.25.0
+release_tag=v0.26.0
+release_version=0.26.0
 tag_ref="refs/tags/${release_tag}"
 verified_tag_ref="refs/release-finalization/${release_tag}"
 git fetch --force --no-tags origin "${tag_ref}:${verified_tag_ref}"
@@ -469,8 +469,16 @@ writing the `started` event or staging replacement material. A concurrent invoca
 waits and then observes the newly active key; a missing, forked, or modified trust path
 aborts without starting a new rotation.
 
-The trusted root fingerprint is the long-lived trust anchor. In production, mount or
-inject `AUDIT_ATTESTATION_ROOT_KEY_ID_PATH` from storage controlled independently from
-the writable keyring and active keys. Retain the root, every transition, every referenced
-public key, and every checkpoint for the complete evidence lifetime. Alert on forks,
-missing transitions, partial rotations, checkpoint staleness, and unexpected key IDs.
+The trusted root fingerprint is the long-lived trust anchor. In production, inject the
+64-character lowercase value as `AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID` from Infisical or
+another store controlled independently from the writable keyring and active keys. Do not
+derive this value from the mounted keyring at verification time. Missing, malformed, or
+mismatched values abort checkpoint verification and key rotation before trust is granted.
+
+The key initializer logs the fingerprint of a newly created root. Review that value and
+store it under separate administrative control before enabling verification or rotation.
+Only local development may set `AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT=true` together with
+`AUDIT_ATTESTATION_ROOT_KEY_ID_PATH`; Compose does this explicitly for its disposable
+demonstration volume. Retain the root, every transition, every referenced public key, and
+every checkpoint for the complete evidence lifetime. Alert on forks, missing transitions,
+partial rotations, checkpoint staleness, and unexpected key IDs.

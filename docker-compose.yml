@@ -316,10 +316,12 @@ services:
     restart: "no"
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      AUDIT_CHAIN_ID: ${AUDIT_CHAIN_ID:-smart-factory-local}
       AUDIT_ATTESTATION_PRIVATE_KEY_PATH: /run/audit-attestation/private/private.pem
       AUDIT_ATTESTATION_PUBLIC_KEY_PATH: /run/audit-attestation/public/public.pem
       AUDIT_ATTESTATION_KEYRING_PATH: /run/audit-attestation/public/keyring
       AUDIT_ATTESTATION_ROOT_KEY_ID_PATH: /run/audit-attestation/public/trusted-root-key-id
+      AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT: "true"
     volumes:
       - audit-attestation-private:/run/audit-attestation/private
       - audit-attestation-public:/run/audit-attestation/public
@@ -370,6 +372,7 @@ services:
       AUDIT_ATTESTATION_PUBLIC_KEY_PATH: /run/audit-attestation/public/public.pem
       AUDIT_ATTESTATION_KEYRING_PATH: /run/audit-attestation/public/keyring
       AUDIT_ATTESTATION_ROOT_KEY_ID_PATH: /run/audit-attestation/public/trusted-root-key-id
+      AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT: "true"
     volumes:
       - audit-attestation-public:/run/audit-attestation/public:ro
       - ${AUDIT_CHECKPOINT_DIRECTORY:-./audit-checkpoints}:/audit-checkpoints:ro
@@ -402,6 +405,7 @@ services:
       AUDIT_ATTESTATION_PUBLIC_KEY_PATH: /run/audit-attestation/public/public.pem
       AUDIT_ATTESTATION_KEYRING_PATH: /run/audit-attestation/public/keyring
       AUDIT_ATTESTATION_ROOT_KEY_ID_PATH: /run/audit-attestation/public/trusted-root-key-id
+      AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT: "true"
     volumes:
       - audit-attestation-private:/run/audit-attestation/private
       - audit-attestation-public:/run/audit-attestation/public

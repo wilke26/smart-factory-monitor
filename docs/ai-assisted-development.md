@@ -166,3 +166,9 @@ independent identity inputs. A same-identity replacement between verification an
 is proven to receive only a signature for the protected snapshot, and environments without
 no-follow file support fail closed. Workflow configuration tests require draft creation and
 exclude direct publication of an unsigned bundle.
+
+For v0.26, negative tests replace the complete audit keyring with a self-consistent but
+unrelated root and prove that the externally pinned fingerprint still rejects it. Further
+tests require the production root value by default, reject malformed fingerprints and
+root/public-key mismatches, and permit the co-located marker only when the explicit local
+development switch is enabled.

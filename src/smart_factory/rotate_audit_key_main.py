@@ -22,11 +22,7 @@ def run(
     checkpoint_settings: AuditCheckpointSettings,
     audit_settings: OperatorAuditSettings,
 ) -> None:
-    if (
-        checkpoint_settings.private_key_path is None
-        or checkpoint_settings.keyring_path is None
-        or checkpoint_settings.trusted_root_key_id_path is None
-    ):
+    if checkpoint_settings.private_key_path is None or checkpoint_settings.keyring_path is None:
         raise ValueError("audit key rotation requires private key and trusted keyring")
     trail = PsycopgOperatorAuditTrail(
         settings.database_url,
@@ -42,7 +38,7 @@ def run(
                 public_key_path=Path(checkpoint_settings.public_key_path),
                 keyring=AuditAttestationKeyring(
                     Path(checkpoint_settings.keyring_path),
-                    Path(checkpoint_settings.trusted_root_key_id_path),
+                    checkpoint_settings.resolve_trusted_root_key_id(),
                 ),
             ),
             trail,

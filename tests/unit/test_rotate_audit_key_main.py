@@ -35,7 +35,7 @@ def test_rotates_and_closes_audit_trail(
         private_key_path="/keys/private.pem",
         public_key_path="/keys/public.pem",
         keyring_path="/keys/keyring",
-        trusted_root_key_id_path="/keys/trusted-root-key-id",
+        trusted_root_key_id="a" * 64,
     )
     audit_settings = OperatorAuditSettings(
         actor="security-operator",

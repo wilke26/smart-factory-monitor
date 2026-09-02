@@ -518,13 +518,11 @@ def test_reads_required_audit_keyring_settings(
 ) -> None:
     keyring_path = tmp_path / "keyring"
     keyring_path.mkdir()
-    root_path = tmp_path / "trusted-root-key-id"
-    root_path.write_text("a" * 64)
     monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
     monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
     monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
     monkeypatch.setenv("AUDIT_ATTESTATION_KEYRING_PATH", str(keyring_path))
-    monkeypatch.setenv("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH", str(root_path))
+    monkeypatch.setenv("AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID", "a" * 64)
 
     settings = AuditCheckpointSettings.from_env(
         require_private_key=False,
@@ -532,22 +530,13 @@ def test_reads_required_audit_keyring_settings(
     )
 
     assert settings.keyring_path == str(keyring_path)
-    assert settings.trusted_root_key_id_path == str(root_path)
+    assert settings.resolve_trusted_root_key_id() == "a" * 64
 
 
-@pytest.mark.parametrize(
-    ("missing_name", "message"),
-    [
-        ("AUDIT_ATTESTATION_KEYRING_PATH", "KEYRING_PATH is required"),
-        ("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH", "ROOT_KEY_ID_PATH is required"),
-    ],
-)
-def test_checkpoint_verification_requires_complete_keyring_configuration(
+def test_checkpoint_verification_requires_external_root_by_default(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     model_signing_keys: tuple[Path, Path],
-    missing_name: str,
-    message: str,
 ) -> None:
     keyring_path = tmp_path / "keyring"
     keyring_path.mkdir()
@@ -558,9 +547,68 @@ def test_checkpoint_verification_requires_complete_keyring_configuration(
     monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
     monkeypatch.setenv("AUDIT_ATTESTATION_KEYRING_PATH", str(keyring_path))
     monkeypatch.setenv("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH", str(root_path))
-    monkeypatch.delenv(missing_name)
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match="TRUSTED_ROOT_KEY_ID is required"):
+        AuditCheckpointSettings.from_env(
+            require_private_key=False,
+            require_keyring=True,
+        )
+
+
+def test_checkpoint_verification_requires_keyring_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    model_signing_keys: tuple[Path, Path],
+) -> None:
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
+    monkeypatch.setenv("AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID", "a" * 64)
+
+    with pytest.raises(ValueError, match="KEYRING_PATH is required"):
+        AuditCheckpointSettings.from_env(
+            require_private_key=False,
+            require_keyring=True,
+        )
+
+
+def test_explicit_development_mode_reads_colocated_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    model_signing_keys: tuple[Path, Path],
+) -> None:
+    keyring_path = tmp_path / "keyring"
+    keyring_path.mkdir()
+    root_path = tmp_path / "trusted-root-key-id"
+    root_path.write_text("a" * 64)
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
+    monkeypatch.setenv("AUDIT_ATTESTATION_KEYRING_PATH", str(keyring_path))
+    monkeypatch.setenv("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH", str(root_path))
+    monkeypatch.setenv("AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT", "true")
+
+    settings = AuditCheckpointSettings.from_env(
+        require_private_key=False,
+        require_keyring=True,
+    )
+
+    assert settings.resolve_trusted_root_key_id() == "a" * 64
+
+
+def test_rejects_invalid_external_root_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    model_signing_keys: tuple[Path, Path],
+) -> None:
+    keyring_path = tmp_path / "keyring"
+    keyring_path.mkdir()
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_CHECKPOINT_PATH", "/checkpoints/checkpoint.json")
+    monkeypatch.setenv("AUDIT_ATTESTATION_PUBLIC_KEY_PATH", str(model_signing_keys[1]))
+    monkeypatch.setenv("AUDIT_ATTESTATION_KEYRING_PATH", str(keyring_path))
+    monkeypatch.setenv("AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID", "NOT-A-FINGERPRINT")
+
+    with pytest.raises(ValueError, match="64 lowercase hex"):
         AuditCheckpointSettings.from_env(
             require_private_key=False,
             require_keyring=True,

@@ -1,6 +1,6 @@
 # ADR 0019: Dual-signed audit-attestation key rotation
 
-- Status: Accepted
+- Status: Accepted; root storage amended by ADR 0028
 - Date: 2026-08-27
 
 ## Context
@@ -52,10 +52,10 @@ deployed public key before a new rotation can start.
 - Database audit writes and filesystem publication cannot form one atomic transaction.
   A partial rotation is detectable through its non-terminal or failed audit evidence and
   requires operator reconciliation before retry.
-- Local Compose stores the root fingerprint beside the public keyring for usability. A
-  production verifier must pin that fingerprint through independently controlled,
-  immutable configuration; otherwise an administrator able to replace the entire
-  keyring could also replace its claimed root.
+- Local Compose stores the root fingerprint beside the public keyring for usability under
+  the explicit development switch defined by ADR 0028. Production verification and
+  rotation require the fingerprint value from independently controlled configuration, so
+  replacing the entire keyring cannot replace its claimed root.
 - Automated scheduling, external immutable retention, HSM/KMS-backed signing, separation
   of duties, and rotation approval remain deployment concerns.
 

@@ -17,12 +17,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 def run(settings: AuditCheckpointSettings) -> None:
-    if settings.keyring_path is None or settings.trusted_root_key_id_path is None:
+    if settings.keyring_path is None:
         raise ValueError("audit checkpoint verification requires a trusted keyring")
     envelope = load_signed_checkpoint(Path(settings.checkpoint_path))
     public_key_path = AuditAttestationKeyring(
         Path(settings.keyring_path),
-        Path(settings.trusted_root_key_id_path),
+        settings.resolve_trusted_root_key_id(),
     ).resolve_trusted_key(
         envelope.checkpoint.key_id,
         expected_chain_id=settings.chain_id,

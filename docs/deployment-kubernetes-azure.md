@@ -10,7 +10,7 @@ deployment, operators must provide:
 - a container registry image built with `requirements/ml.lock` if ML will be enabled;
 - CA and client certificates issued by the deployment PKI;
 - an Ed25519 model-signing public key distributed separately from model artifacts;
-- a Kubernetes storage class supporting `ReadWriteMany` for the model registry.
+- a Kubernetes storage class supporting `ReadWriteMany` for the model registry;
 - Kubernetes 1.30 or newer with `ValidatingAdmissionPolicy` available for production
   digest enforcement.
 
@@ -60,6 +60,11 @@ kubectl -n smart-factory create secret generic model-signing-public-key \
 Do not place literal production values in shell history; the commands illustrate the
 required Secret keys only.
 
+Operational Jobs that verify checkpoints or rotate audit-attestation keys must receive
+`AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID` directly from an independently managed Secret
+(for example, synchronized from Infisical). Do not mount that value from the writable
+keyring PVC, and do not enable `AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT` in the cluster.
+
 ## Azure Container Registry and AKS
 
 Build the ML-capable image remotely and attach ACR pull permission to AKS using managed
@@ -68,7 +73,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.25.0 \
+  --image smart-factory-monitor:0.26.0 \
   --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \
@@ -112,7 +117,7 @@ kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding \
 The Azure namespace carries
 `security.smart-factory-monitor.io/require-digest-images=true`. After admission
 registration has propagated, use a server-side dry run to confirm that a Deployment with
-an image such as `smart-factory-monitor:0.25.0` is denied. Only then apply the
+an image such as `smart-factory-monitor:0.26.0` is denied. Only then apply the
 digest-bound release YAML. The ordinary Azure overlay deliberately retains a review tag
 and will be rejected in the protected namespace.
 

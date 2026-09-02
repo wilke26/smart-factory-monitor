@@ -27,11 +27,12 @@ def initialized_keyring(tmp_path: Path) -> tuple[AuditAttestationKeyring, Path, 
     private_path = tmp_path / "private.pem"
     public_path = tmp_path / "public.pem"
     ensure_ed25519_key_pair(private_path, public_path)
+    root_id = public_key_id(public_path)
     keyring = AuditAttestationKeyring(
         tmp_path / "keyring",
-        tmp_path / "trusted-root-key-id",
+        root_id,
     )
-    root_id = keyring.initialize(public_path)
+    keyring.initialize(public_path)
     return keyring, private_path, public_path, root_id
 
 
@@ -69,6 +70,42 @@ def test_rotates_with_dual_signature_and_keeps_both_keys_trusted(tmp_path: Path)
         result.new_key_id, expected_chain_id="factory-production"
     ).is_file()
     assert list(private_path.parent.glob(".pending-*.pem")) == []
+
+
+def test_reinitializes_rotated_key_only_through_pinned_root_chain(tmp_path: Path) -> None:
+    keyring, private_path, public_path, root_id = initialized_keyring(tmp_path)
+    rotate(
+        FilesystemAuditAttestationKeyRotator(
+            chain_id="factory-production",
+            private_key_path=private_path,
+            public_key_path=public_path,
+            keyring=keyring,
+        )
+    )
+
+    restarted_keyring = AuditAttestationKeyring(tmp_path / "keyring", root_id)
+    current_id = restarted_keyring.initialize(
+        public_path,
+        expected_chain_id="factory-production",
+    )
+
+    assert current_id == public_key_id(public_path)
+    assert restarted_keyring.active_key_id() == current_id
+
+
+def test_rejects_rotated_key_reinitialization_without_chain_identity(tmp_path: Path) -> None:
+    keyring, private_path, public_path, root_id = initialized_keyring(tmp_path)
+    rotate(
+        FilesystemAuditAttestationKeyRotator(
+            chain_id="factory-production",
+            private_key_path=private_path,
+            public_key_path=public_path,
+            keyring=keyring,
+        )
+    )
+
+    with pytest.raises(AuditCheckpointError, match="chain ID is required"):
+        AuditAttestationKeyring(tmp_path / "keyring", root_id).initialize(public_path)
 
 
 def test_checkpoints_before_and_after_rotation_share_one_trust_anchor(tmp_path: Path) -> None:
@@ -161,7 +198,7 @@ def test_exclusive_rotation_serializes_independent_rotators(tmp_path: Path) -> N
         public_key_path=public_path,
         keyring=AuditAttestationKeyring(
             tmp_path / "keyring",
-            tmp_path / "trusted-root-key-id",
+            keyring.trusted_root_key_id(),
         ),
     )
     attempted = Event()
@@ -205,7 +242,7 @@ def test_concurrent_rotations_form_one_linear_trust_chain(tmp_path: Path) -> Non
             public_key_path=public_path,
             keyring=AuditAttestationKeyring(
                 tmp_path / "keyring",
-                tmp_path / "trusted-root-key-id",
+                root_id,
             ),
         )
         for _ in range(2)
@@ -243,3 +280,22 @@ def test_rejects_untrusted_root_replacement(tmp_path: Path) -> None:
 
     with pytest.raises(AuditCheckpointError, match="identity is invalid"):
         keyring.resolve_trusted_key(root_id, expected_chain_id="factory-production")
+
+
+def test_rejects_keyring_replacement_when_root_is_pinned_externally(tmp_path: Path) -> None:
+    _, _, _, trusted_root_id = initialized_keyring(tmp_path / "trusted")
+    replacement_private = tmp_path / "replacement-private.pem"
+    replacement_public = tmp_path / "replacement-public.pem"
+    ensure_ed25519_key_pair(replacement_private, replacement_public)
+    replacement_root_id = public_key_id(replacement_public)
+    replacement_keyring = AuditAttestationKeyring(
+        tmp_path / "replacement-keyring", replacement_root_id
+    )
+    replacement_keyring.initialize(replacement_public)
+
+    externally_pinned = AuditAttestationKeyring(tmp_path / "replacement-keyring", trusted_root_id)
+
+    with pytest.raises(AuditCheckpointError, match="could not load audit attestation public key"):
+        externally_pinned.resolve_trusted_key(
+            replacement_root_id, expected_chain_id="factory-production"
+        )

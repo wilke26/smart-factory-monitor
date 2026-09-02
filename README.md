@@ -1,6 +1,6 @@
 # Smart Factory Monitor
 
-Version **0.25.0** is a small, production-minded Smart Factory telemetry pipeline. A
+Version **0.26.0** is a small, production-minded Smart Factory telemetry pipeline. A
 simulator publishes validated machine readings to Eclipse Mosquitto; an independent
 consumer subscribes to telemetry topics, validates every JSON message with Pydantic v2,
 combines deterministic rules with optional multivariate Isolation Forest inference, and
@@ -70,6 +70,11 @@ created when any identity differs. CI now creates an unsigned GitHub Release dra
 operator signs and verifies that draft, uploads the detached signature, and only then
 publishes the complete release so repository-level release immutability can cover every
 asset from the first public moment.
+v0.26 removes the audit-keyring's authority to choose its own trust root. Production
+checkpoint verification and key rotation require the 64-character root fingerprint as an
+independently injected value and fail closed when it is absent or does not identify the
+archived root key. The co-located root marker remains available only behind an explicit
+development switch for the local Compose demonstration.
 
 There is intentionally no HTTP API, online learning, or automatic model promotion.
 
@@ -336,11 +341,12 @@ AUDIT_CORRELATION_ID=<uuid> AUDIT_CHAIN_ID=smart-factory-local \
   docker compose --profile tools run --rm audit-key-rotator
 ```
 
-The transition is immutable and signed by both keys. Verification begins at
-`AUDIT_ATTESTATION_ROOT_KEY_ID_PATH` and accepts a checkpoint key only if every transition
-from that root is valid and belongs to the expected chain. Production must pin the root
-fingerprint outside the writable keyring boundary; the local Compose volume is only a
-development demonstration of the protocol.
+The transition is immutable and signed by both keys. Production verification begins at
+`AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID`, injected from a trust store outside the writable
+keyring boundary, and accepts a checkpoint key only if every transition from that root is
+valid and belongs to the expected chain. Local Compose explicitly enables
+`AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT` and reads its root marker from the shared volume
+only as a development demonstration of the protocol.
 
 `AUDIT_ACTOR` is an asserted identity. Production automation must derive it from an
 authenticated workload or operator context rather than accepting arbitrary user input.
@@ -453,7 +459,9 @@ Copy `.env.example` to `.env` to override Compose defaults.
 | `AUDIT_ATTESTATION_PRIVATE_KEY_PATH` | empty | Export-only Ed25519 attestation key |
 | `AUDIT_ATTESTATION_PUBLIC_KEY_PATH` | empty | Independent checkpoint-verification key |
 | `AUDIT_ATTESTATION_KEYRING_PATH` | empty | Archived public keys and dual-signed transitions |
-| `AUDIT_ATTESTATION_ROOT_KEY_ID_PATH` | empty | Independently pinned root-key fingerprint |
+| `AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID` | empty | Required production root fingerprint from an independent trust store |
+| `AUDIT_ATTESTATION_ROOT_KEY_ID_PATH` | empty | Development-only co-located root marker |
+| `AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT` | `false` | Explicitly permit the weaker local development mode |
 | `ALERT_WEBHOOK_URL` | empty | Verified HTTPS destination; empty disables alert outbox creation |
 | `ALERT_WEBHOOK_ALLOW_INSECURE_HTTP` | `false` | Development-only opt-in for plain HTTP |
 | `ALERT_WEBHOOK_BEARER_TOKEN` | empty | Optional dispatcher-only bearer credential |
@@ -578,6 +586,7 @@ ALERT_WEBHOOK_URL=https://alerts.example.test/events smart-factory-alert-dispatc
 - [ADR 0025: offline complete release-bundle verification](docs/adr/0025-offline-release-bundle-verification.md)
 - [ADR 0026: externally anchored release-bundle signatures](docs/adr/0026-external-release-bundle-signatures.md)
 - [ADR 0027: sign-before-publish release finalization](docs/adr/0027-sign-before-publish-release-finalization.md)
+- [ADR 0028: externally pinned audit trust root](docs/adr/0028-externally-pinned-audit-trust-root.md)
 - [Operations and observability](docs/operations.md)
 - [Multi-machine model operations](docs/model-operations.md)
 - [Kubernetes and Azure deployment](docs/deployment-kubernetes-azure.md)

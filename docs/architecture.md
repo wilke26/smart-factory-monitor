@@ -1,4 +1,4 @@
-# Architecture v0.25.0
+# Architecture v0.26.0
 
 ## Scope
 
@@ -52,6 +52,9 @@ Version 0.25 moves that trust boundary before publication. CI produces an unsign
 and the external signer atomically checks the independently expected version, full Git
 revision, and digest-qualified image reference while creating the signature. Only the
 complete, freshly reverified eight-file bundle is published.
+Version 0.26 moves the audit-attestation root outside the mutable public keyring boundary.
+Verification and rotation require an externally injected root fingerprint and validate
+the archived root public key against it before following any dual-signed transition.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -279,6 +282,16 @@ a fresh eight-file download, revalidates the remote annotated tag, and publishes
 only during an exclusive finalization window. GitHub still exposes separate upload and
 publication operations, so consumers continue to require the detached signature even when
 repository-level release immutability is enabled.
+
+v0.26 makes the audit root an input to the keyring rather than keyring-owned state. The
+normal verification and rotation commands receive a lowercase SHA-256 fingerprint from
+independently controlled configuration, reject a missing or malformed value, and verify
+that the archived root public key has exactly that identity. Replacing the keyring,
+active-key marker, transitions, and public keys therefore cannot establish a different
+trust domain. The initializer may emit a newly generated root fingerprint for an operator
+to pin, but an existing key cannot be reinitialized without that external value. Local
+Compose opts into a clearly named co-located-root mode; production defaults remain
+fail-closed.
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,
