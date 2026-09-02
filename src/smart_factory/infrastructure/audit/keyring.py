@@ -95,6 +95,8 @@ class AuditAttestationKeyring:
         """Create or read the explicitly weaker co-located development root."""
         if not KEY_ID_PATTERN.fullmatch(key_id):
             raise AuditCheckpointError("trusted root audit key ID is invalid")
+        if path.exists():
+            return cls._read_key_id(path, "trusted root audit key ID")
         cls._write_once(path, f"{key_id}\n".encode(), 0o644)
         return cls._read_key_id(path, "trusted root audit key ID")
 

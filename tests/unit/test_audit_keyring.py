@@ -51,6 +51,23 @@ def test_initial_key_is_trusted_root_and_reinitialization_is_idempotent(tmp_path
     )
 
 
+def test_development_root_marker_remains_pinned_after_active_key_changes(
+    tmp_path: Path,
+) -> None:
+    marker_path = tmp_path / "trusted-root-key-id"
+    root_id = "a" * 64
+    replacement_id = "b" * 64
+
+    assert (
+        AuditAttestationKeyring.initialize_development_root_marker(marker_path, root_id) == root_id
+    )
+    assert (
+        AuditAttestationKeyring.initialize_development_root_marker(marker_path, replacement_id)
+        == root_id
+    )
+    assert marker_path.read_text() == f"{root_id}\n"
+
+
 def test_rotates_with_dual_signature_and_keeps_both_keys_trusted(tmp_path: Path) -> None:
     keyring, private_path, public_path, root_id = initialized_keyring(tmp_path)
     rotator = FilesystemAuditAttestationKeyRotator(
