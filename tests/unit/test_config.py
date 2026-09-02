@@ -5,6 +5,7 @@ import pytest
 from smart_factory.config import (
     AlertSettings,
     AuditCheckpointSettings,
+    AuditKeyringSettings,
     MlSettings,
     MqttSecuritySettings,
     OperatorAuditSettings,
@@ -529,6 +530,23 @@ def test_reads_required_audit_keyring_settings(
         require_keyring=True,
     )
 
+    assert settings.keyring_path == str(keyring_path)
+    assert settings.resolve_trusted_root_key_id() == "a" * 64
+
+
+def test_reads_standalone_audit_keyring_verification_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    keyring_path = tmp_path / "keyring"
+    keyring_path.mkdir()
+    monkeypatch.setenv("AUDIT_CHAIN_ID", "factory-production")
+    monkeypatch.setenv("AUDIT_ATTESTATION_KEYRING_PATH", str(keyring_path))
+    monkeypatch.setenv("AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID", "a" * 64)
+
+    settings = AuditKeyringSettings.from_env()
+
+    assert settings.chain_id == "factory-production"
     assert settings.keyring_path == str(keyring_path)
     assert settings.resolve_trusted_root_key_id() == "a" * 64
 

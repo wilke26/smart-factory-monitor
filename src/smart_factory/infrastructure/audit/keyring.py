@@ -10,15 +10,18 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC
 from fcntl import LOCK_EX, LOCK_UN, flock
+from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import get_ident
+from uuid import UUID
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pydantic import ValidationError
 
 from smart_factory.domain.audit_keyring import (
+    AuditKeyringVerification,
     AuditKeyRotationResult,
     AuditKeyTransition,
     SignedAuditKeyTransition,
@@ -140,6 +143,83 @@ class AuditAttestationKeyring:
                 return self.key_path(current)
         raise AuditCheckpointError("checkpoint key is not trusted by the configured root")
 
+    def verify_integrity(self, *, expected_chain_id: str) -> AuditKeyringVerification:
+        """Verify and summarize the complete, linear root-to-active trust chain."""
+        root_key_id = self.trusted_root_key_id()
+        self._validate_key_file(root_key_id)
+        active_key_id = self.active_key_id()
+        transitions = self._load_verified_transitions(expected_chain_id=expected_chain_id)
+
+        current = root_key_id
+        key_ids = [current]
+        transition_ids: list[UUID] = []
+        consumed_previous_ids: set[str] = set()
+        while current in transitions:
+            envelope = transitions[current]
+            consumed_previous_ids.add(current)
+            transition_ids.append(envelope.transition.transition_id)
+            current = envelope.transition.new_key_id
+            if current in key_ids:
+                raise AuditCheckpointError("audit attestation keyring contains a cycle")
+            key_ids.append(current)
+
+        if current != active_key_id:
+            raise AuditCheckpointError("active audit key is not the terminal trusted key")
+        if len(consumed_previous_ids) != len(transitions):
+            raise AuditCheckpointError("audit attestation keyring contains a disconnected chain")
+
+        archived_key_ids: set[str] = set()
+        for path in sorted(self._keys_directory.iterdir()):
+            key_id = path.stem
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or path.suffix != ".pem"
+                or not KEY_ID_PATTERN.fullmatch(key_id)
+            ):
+                raise AuditCheckpointError("audit keyring contains an invalid key entry")
+            self._validate_key_file(key_id)
+            archived_key_ids.add(key_id)
+        if archived_key_ids != set(key_ids):
+            raise AuditCheckpointError("audit keyring contains unexpected archived keys")
+
+        snapshot_records = [
+            {
+                "name": f"keys/{key_id}.pem",
+                "sha256": sha256(self.key_path(key_id).read_bytes()).hexdigest(),
+            }
+            for key_id in key_ids
+        ]
+        for previous_key_id in consumed_previous_ids:
+            transition = transitions[previous_key_id].transition
+            path = self._transitions_directory / (
+                f"{transition.previous_key_id}-{transition.new_key_id}.json"
+            )
+            snapshot_records.append(
+                {
+                    "name": f"transitions/{path.name}",
+                    "sha256": sha256(path.read_bytes()).hexdigest(),
+                }
+            )
+        snapshot = {
+            "active_key_id": active_key_id,
+            "chain_id": expected_chain_id,
+            "records": sorted(snapshot_records, key=lambda record: record["name"]),
+            "schema_version": 1,
+            "trusted_root_key_id": root_key_id,
+        }
+        snapshot_sha256 = sha256(
+            json.dumps(snapshot, separators=(",", ":"), sort_keys=True).encode()
+        ).hexdigest()
+        return AuditKeyringVerification(
+            chain_id=expected_chain_id,
+            trusted_root_key_id=root_key_id,
+            active_key_id=active_key_id,
+            key_ids=tuple(key_ids),
+            transition_ids=tuple(transition_ids),
+            snapshot_sha256=snapshot_sha256,
+        )
+
     def publish_transition(
         self,
         envelope: SignedAuditKeyTransition,
@@ -171,12 +251,14 @@ class AuditAttestationKeyring:
     def _load_verified_transitions(
         self, *, expected_chain_id: str
     ) -> dict[str, SignedAuditKeyTransition]:
-        paths = sorted(self._transitions_directory.glob("*.json"))
+        paths = sorted(self._transitions_directory.iterdir())
         if len(paths) > MAX_TRANSITIONS:
             raise AuditCheckpointError("audit attestation keyring exceeds transition limit")
         transitions: dict[str, SignedAuditKeyTransition] = {}
         for path in paths:
             try:
+                if path.is_symlink() or not path.is_file() or path.suffix != ".json":
+                    raise AuditCheckpointError("audit keyring contains an invalid transition entry")
                 if path.stat().st_size > MAX_TRANSITION_BYTES:
                     raise AuditCheckpointError("audit key transition exceeds size limit")
                 envelope = SignedAuditKeyTransition.model_validate_json(path.read_bytes())
@@ -185,6 +267,9 @@ class AuditAttestationKeyring:
             except (OSError, ValidationError) as error:
                 raise AuditCheckpointError("could not load audit key transition") from error
             previous = envelope.transition.previous_key_id
+            expected_name = f"{previous}-{envelope.transition.new_key_id}.json"
+            if path.name != expected_name:
+                raise AuditCheckpointError("audit key transition filename is invalid")
             if previous in transitions:
                 raise AuditCheckpointError("audit attestation keyring contains a fork")
             self._verify_transition(envelope, expected_chain_id=expected_chain_id)
@@ -285,7 +370,8 @@ class FilesystemAuditAttestationKeyRotator:
                 self._rotation_owner = None
 
     def current_key_id(self) -> str:
-        active = self._keyring.active_key_id()
+        verification = self._keyring.verify_integrity(expected_chain_id=self._chain_id)
+        active = verification.active_key_id
         if public_key_id(self._public_key_path) != active:
             raise AuditCheckpointError("active audit key does not match public key")
         trusted_key_path = self._keyring.resolve_trusted_key(

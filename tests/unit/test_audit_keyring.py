@@ -89,6 +89,78 @@ def test_rotates_with_dual_signature_and_keeps_both_keys_trusted(tmp_path: Path)
     assert list(private_path.parent.glob(".pending-*.pem")) == []
 
 
+def test_verifies_complete_linear_keyring_and_stable_snapshot(tmp_path: Path) -> None:
+    keyring, private_path, public_path, root_id = initialized_keyring(tmp_path)
+    rotator = FilesystemAuditAttestationKeyRotator(
+        chain_id="factory-production",
+        private_key_path=private_path,
+        public_key_path=public_path,
+        keyring=keyring,
+    )
+    first = rotate(rotator)
+    second = rotate(rotator)
+
+    verification = keyring.verify_integrity(expected_chain_id="factory-production")
+
+    assert verification.trusted_root_key_id == root_id
+    assert verification.active_key_id == second.new_key_id
+    assert verification.key_ids == (
+        root_id,
+        first.new_key_id,
+        second.new_key_id,
+    )
+    assert verification.transition_ids == (first.transition_id, second.transition_id)
+    assert (
+        keyring.verify_integrity(expected_chain_id="factory-production").snapshot_sha256
+        == verification.snapshot_sha256
+    )
+
+
+def test_integrity_rejects_active_key_that_is_not_terminal(tmp_path: Path) -> None:
+    keyring, private_path, public_path, root_id = initialized_keyring(tmp_path)
+    rotate(
+        FilesystemAuditAttestationKeyRotator(
+            chain_id="factory-production",
+            private_key_path=private_path,
+            public_key_path=public_path,
+            keyring=keyring,
+        )
+    )
+    keyring.activate(root_id)
+
+    with pytest.raises(AuditCheckpointError, match="not the terminal trusted key"):
+        keyring.verify_integrity(expected_chain_id="factory-production")
+
+
+def test_integrity_rejects_unreferenced_archived_key(tmp_path: Path) -> None:
+    keyring, _, _, _ = initialized_keyring(tmp_path)
+    orphan_private = tmp_path / "orphan-private.pem"
+    orphan_public = tmp_path / "orphan-public.pem"
+    ensure_ed25519_key_pair(orphan_private, orphan_public)
+    orphan_id = public_key_id(orphan_public)
+    keyring.key_path(orphan_id).write_bytes(orphan_public.read_bytes())
+
+    with pytest.raises(AuditCheckpointError, match="unexpected archived keys"):
+        keyring.verify_integrity(expected_chain_id="factory-production")
+
+
+def test_integrity_rejects_noncanonical_transition_filename(tmp_path: Path) -> None:
+    keyring, private_path, public_path, _ = initialized_keyring(tmp_path)
+    rotate(
+        FilesystemAuditAttestationKeyRotator(
+            chain_id="factory-production",
+            private_key_path=private_path,
+            public_key_path=public_path,
+            keyring=keyring,
+        )
+    )
+    transition_path = next((tmp_path / "keyring" / "transitions").glob("*.json"))
+    transition_path.rename(transition_path.with_name("renamed.json"))
+
+    with pytest.raises(AuditCheckpointError, match="filename is invalid"):
+        keyring.verify_integrity(expected_chain_id="factory-production")
+
+
 def test_reinitializes_rotated_key_only_through_pinned_root_chain(tmp_path: Path) -> None:
     keyring, private_path, public_path, root_id = initialized_keyring(tmp_path)
     rotate(
@@ -194,7 +266,7 @@ def test_refuses_rotation_when_active_key_is_no_longer_rooted(tmp_path: Path) ->
     transition_path = next((tmp_path / "keyring" / "transitions").glob("*.json"))
     transition_path.unlink()
 
-    with pytest.raises(AuditCheckpointError, match="not trusted by the configured root"):
+    with pytest.raises(AuditCheckpointError, match="not the terminal trusted key"):
         rotator.current_key_id()
 
     assert list((tmp_path / "keyring" / "transitions").glob("*.json")) == []

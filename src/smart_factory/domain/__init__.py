@@ -3,7 +3,11 @@
 from smart_factory.domain.alert import AnomalyAlert
 from smart_factory.domain.anomaly import AnomalyFinding, AnomalySeverity
 from smart_factory.domain.audit_checkpoint import AuditCheckpoint, SignedAuditCheckpoint
-from smart_factory.domain.audit_keyring import AuditKeyRotationResult, AuditKeyTransition
+from smart_factory.domain.audit_keyring import (
+    AuditKeyringVerification,
+    AuditKeyRotationResult,
+    AuditKeyTransition,
+)
 from smart_factory.domain.model_evaluation import ModelEvaluationEvidence
 from smart_factory.domain.model_registry import ModelRegistryEntry, ModelRegistryManifest
 from smart_factory.domain.operator_audit import OperatorAuditContext, OperatorAuditEvent
@@ -16,6 +20,7 @@ __all__ = [
     "AuditCheckpoint",
     "AuditKeyRotationResult",
     "AuditKeyTransition",
+    "AuditKeyringVerification",
     "ModelEvaluationEvidence",
     "ModelRegistryEntry",
     "ModelRegistryManifest",

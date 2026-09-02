@@ -1,4 +1,4 @@
-# Architecture v0.26.0
+# Architecture v0.27.0
 
 ## Scope
 
@@ -292,6 +292,12 @@ trust domain. The initializer may emit a newly generated root fingerprint for an
 to pin, but an existing key cannot be reinitialized without that external value. Local
 Compose opts into a clearly named co-located-root mode; production defaults remain
 fail-closed.
+
+v0.27 makes rotation approval state-specific. A read-only verifier authenticates the entire
+linear root-to-active chain, rejects orphaned or disconnected evidence, and reports a
+deterministic snapshot digest. The rotation service compares the approved active key ID
+inside its exclusive lock before it writes any audit event or key material. An intervening
+rotation therefore invalidates the stale approval instead of authorizing another change.
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,

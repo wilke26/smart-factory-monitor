@@ -20,9 +20,16 @@ class AuditAttestationKeyRotationService:
         self._rotator = rotator
         self._audit_trail = audit_trail
 
-    def rotate(self, context: OperatorAuditContext) -> AuditKeyRotationResult:
+    def rotate(
+        self,
+        context: OperatorAuditContext,
+        *,
+        expected_active_key_id: str,
+    ) -> AuditKeyRotationResult:
         with self._rotator.exclusive():
             previous_key_id = self._rotator.current_key_id()
+            if previous_key_id != expected_active_key_id:
+                raise ValueError("active audit key does not match approved key")
             previous_state = (("key_id", previous_key_id),)
             self._audit_trail.append(
                 OperatorAuditEvent.create(

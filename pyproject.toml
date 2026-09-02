@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smart-factory-monitor"
-version = "0.26.0"
+version = "0.27.0"
 description = "A Smart Factory telemetry pipeline with explainable rule-based and multivariate ML anomaly detection."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -53,6 +53,7 @@ smart-factory-generate-audit-key = "smart_factory.generate_audit_key_main:main"
 smart-factory-export-audit-checkpoint = "smart_factory.export_audit_checkpoint_main:main"
 smart-factory-verify-audit-checkpoint = "smart_factory.verify_audit_checkpoint_main:main"
 smart-factory-rotate-audit-key = "smart_factory.rotate_audit_key_main:main"
+smart-factory-verify-audit-keyring = "smart_factory.verify_audit_keyring_main:main"
 smart-factory-verify-release = "smart_factory.release_verification:main"
 smart-factory-release-signature = "smart_factory.release_signature:main"
 

@@ -113,7 +113,7 @@ write permission.
 
 ## Release provenance and SBOM privacy
 
-The release jobs run only for an annotated semantic release tag such as `v0.26.0`. The tag
+The release jobs run only for an annotated semantic release tag such as `v0.27.0`. The tag
 must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
 `origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
 created. Ordinary `main` pushes and pull requests do not create release evidence,
@@ -170,12 +170,12 @@ digest is pullable, and, where present, verify attestations against this reposit
 ```bash
 cd dist
 smart-factory-verify-release . \
-  --expected-version 0.26.0 \
+  --expected-version 0.27.0 \
   --expected-revision '<full-release-commit-sha>' \
   --expected-image-reference 'ghcr.io/wilke26/smart-factory-monitor@sha256:<full-digest>'
 IMAGE_REFERENCE=$(python -c 'import json; print(json.load(open("release-manifest.json"))["container"]["reference"])')
 docker pull "$IMAGE_REFERENCE"
-gh attestation verify smart_factory_monitor-0.26.0-py3-none-any.whl \
+gh attestation verify smart_factory_monitor-0.27.0-py3-none-any.whl \
   --repo wilke26/smart-factory-monitor
 ```
 
@@ -193,7 +193,7 @@ dependency:
 ```bash
 export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
 smart-factory-verify-release . \
-  --expected-version 0.26.0 \
+  --expected-version 0.27.0 \
   --expected-revision '<full-release-commit-sha>' \
   --public-key /secure/release-evidence-public.pem \
   --private-key /secure/release-evidence-private.pem \
@@ -239,8 +239,8 @@ command. The signer copies the bundle into a protected snapshot before verificat
 concurrent local replacement cannot change the bytes that receive the signature:
 
 ```bash
-release_tag=v0.26.0
-release_version=0.26.0
+release_tag=v0.27.0
+release_version=0.27.0
 tag_ref="refs/tags/${release_tag}"
 verified_tag_ref="refs/release-finalization/${release_tag}"
 git fetch --force --no-tags origin "${tag_ref}:${verified_tag_ref}"
@@ -448,12 +448,18 @@ the checkpoint as a workflow artifact for 30 days and rejects modified content. 
 production environment must use independently administered immutable storage, define
 checkpoint cadence and maximum age, and alert on missing exports.
 
-v0.17 adds explicit audited rotation. Run it only from an authorized operator context and
-use the identical chain ID used by checkpoint export:
+v0.17 adds explicit audited rotation. Since v0.27, run a read-only integrity check
+immediately before an authorized rotation. Retain the JSON result or at least its snapshot
+digest with the change approval. Use the identical chain ID used by checkpoint export:
 
 ```bash
+audit_keyring_status=$(docker compose --profile tools run --rm audit-keyring-verifier)
+printf '%s\n' "$audit_keyring_status"
+approved_active_key_id=$(printf '%s' "$audit_keyring_status" | \
+  python -c "import json,sys; print(json.load(sys.stdin)['active_key_id'])")
 AUDIT_ACTOR=<trusted-identity> AUDIT_REASON=<ticket-or-reason> \
 AUDIT_CORRELATION_ID=<uuid> AUDIT_CHAIN_ID=smart-factory-local \
+AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID="$approved_active_key_id" \
   docker compose --profile tools run --rm audit-key-rotator
 ```
 
@@ -468,6 +474,14 @@ walks the complete transition path from the configured root to the active key be
 writing the `started` event or staging replacement material. A concurrent invocation
 waits and then observes the newly active key; a missing, forked, or modified trust path
 aborts without starting a new rotation.
+
+The expected active key is checked again while the exclusive lock is held. If another
+rotation occurred after approval, the command fails before writing a `started` event or any
+key material. Run `audit-keyring-verifier` again, investigate the unexpected change, and
+obtain a new approval; never substitute the new value automatically. The verifier requires
+only the public keyring and external root pin. It rejects orphan keys, disconnected paths,
+non-terminal active markers, invalid filenames, forks, cycles, wrong-chain transitions, and
+invalid signatures. Changing the trusted root remains a separate trust-domain migration.
 
 The trusted root fingerprint is the long-lived trust anchor. In production, inject the
 64-character lowercase value as `AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID` from Infisical or

@@ -58,3 +58,20 @@ class AuditKeyRotationResult(BaseModel):
     transition_id: UUID
     previous_key_id: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     new_key_id: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class AuditKeyringVerification(BaseModel):
+    """Authenticated, deterministic summary of one complete audit-key trust chain."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal[1] = 1
+    chain_id: Annotated[
+        str,
+        Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$"),
+    ]
+    trusted_root_key_id: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    active_key_id: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    key_ids: tuple[Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")], ...]
+    transition_ids: tuple[UUID, ...]
+    snapshot_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]

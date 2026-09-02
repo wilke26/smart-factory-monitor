@@ -290,6 +290,74 @@ class OperatorAuditSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AuditKeyringSettings:
+    """Read-only trust inputs for complete audit-keyring verification."""
+
+    chain_id: str
+    keyring_path: str
+    trusted_root_key_id: str | None = None
+    trusted_root_key_id_path: str | None = None
+    allow_colocated_trusted_root: bool = False
+
+    def resolve_trusted_root_key_id(self) -> str:
+        if self.trusted_root_key_id is not None:
+            return self.trusted_root_key_id
+        if not self.allow_colocated_trusted_root:
+            raise ValueError("AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID is required")
+        if self.trusted_root_key_id_path is None:
+            raise ValueError(
+                "AUDIT_ATTESTATION_ROOT_KEY_ID_PATH is required for co-located root mode"
+            )
+        try:
+            key_id = Path(self.trusted_root_key_id_path).read_text().strip()
+        except OSError as error:
+            raise ValueError(
+                "AUDIT_ATTESTATION_ROOT_KEY_ID_PATH must identify a readable file"
+            ) from error
+        if not _AUDIT_KEY_ID_PATTERN.fullmatch(key_id):
+            raise ValueError("co-located trusted root audit key ID is invalid")
+        return key_id
+
+    @classmethod
+    def from_env(cls) -> "AuditKeyringSettings":
+        chain_id = os.getenv("AUDIT_CHAIN_ID", "").strip()
+        keyring_path = os.getenv("AUDIT_ATTESTATION_KEYRING_PATH", "").strip()
+        trusted_root_key_id = _optional_text("AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID")
+        trusted_root_key_id_path = _optional_text("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH")
+        allow_colocated_trusted_root = _required_boolean(
+            "AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT", "false"
+        )
+        if not chain_id:
+            raise ValueError("AUDIT_CHAIN_ID is required for audit checkpoints")
+        if not _AUDIT_CHAIN_ID_PATTERN.fullmatch(chain_id):
+            raise ValueError("AUDIT_CHAIN_ID contains unsupported characters")
+        if not keyring_path or not Path(keyring_path).is_dir():
+            raise ValueError("AUDIT_ATTESTATION_KEYRING_PATH must identify a directory")
+        if trusted_root_key_id is not None and not _AUDIT_KEY_ID_PATTERN.fullmatch(
+            trusted_root_key_id
+        ):
+            raise ValueError("AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID must be 64 lowercase hex")
+        if trusted_root_key_id is None:
+            if not allow_colocated_trusted_root:
+                raise ValueError("AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID is required")
+            if trusted_root_key_id_path is None:
+                raise ValueError(
+                    "AUDIT_ATTESTATION_ROOT_KEY_ID_PATH is required for co-located root mode"
+                )
+            if not Path(trusted_root_key_id_path).is_file() or not os.access(
+                trusted_root_key_id_path, os.R_OK
+            ):
+                raise ValueError("AUDIT_ATTESTATION_ROOT_KEY_ID_PATH must identify a readable file")
+        return cls(
+            chain_id=chain_id,
+            keyring_path=keyring_path,
+            trusted_root_key_id=trusted_root_key_id,
+            trusted_root_key_id_path=trusted_root_key_id_path,
+            allow_colocated_trusted_root=allow_colocated_trusted_root,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AuditCheckpointSettings:
     """Key material and destination for portable audit-chain checkpoints."""
 

@@ -510,7 +510,7 @@ jobs:
           grep -q 'smart-factory-alert-dispatcher' /tmp/smart-factory-base.yaml
           test "$(grep -c 'image: smartfactory.azurecr.io/smart-factory-monitor@sha256:1111111111111111111111111111111111111111111111111111111111111111' /tmp/smart-factory-release.yaml)" = "3"
       - name: Build application images
-        run: docker compose build simulator consumer alert-dispatcher model-key-init model-trainer model-evaluator model-promoter model-rollback audit-verifier audit-key-init audit-key-rotator audit-checkpoint-exporter audit-checkpoint-verifier recovery-model-verifier
+        run: docker compose build simulator consumer alert-dispatcher model-key-init model-trainer model-evaluator model-promoter model-rollback audit-verifier audit-key-init audit-key-rotator audit-keyring-verifier audit-checkpoint-exporter audit-checkpoint-verifier recovery-model-verifier
       - name: Scan consumer image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -552,7 +552,19 @@ jobs:
             echo "tampered audit checkpoint unexpectedly verified"
             exit 1
           fi
-          AUDIT_ACTOR=github-actions AUDIT_REASON=ci-attestation-key-rotation AUDIT_CORRELATION_ID=22222222-2222-2222-2222-222222222222 AUDIT_CHAIN_ID=github-actions:${{ github.repository }} docker compose --profile tools run --rm audit-key-rotator
+          pre_rotation_status=$(AUDIT_CHAIN_ID=github-actions:${{ github.repository }} docker compose --profile tools run --rm --no-deps audit-keyring-verifier)
+          expected_active_key_id=$(printf '%s' "$pre_rotation_status" | python -c "import json,sys; print(json.load(sys.stdin)['active_key_id'])")
+          expected_root_key_id=$(printf '%s' "$pre_rotation_status" | python -c "import json,sys; print(json.load(sys.stdin)['trusted_root_key_id'])")
+          test "$(printf '%s' "$pre_rotation_status" | python -c "import json,sys; print(len(json.load(sys.stdin)['transition_ids']))")" = "0"
+          AUDIT_ACTOR=github-actions AUDIT_REASON=ci-attestation-key-rotation AUDIT_CORRELATION_ID=22222222-2222-2222-2222-222222222222 AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID="$expected_active_key_id" docker compose --profile tools run --rm audit-key-rotator
+          post_rotation_status=$(AUDIT_CHAIN_ID=github-actions:${{ github.repository }} docker compose --profile tools run --rm --no-deps audit-keyring-verifier)
+          test "$(printf '%s' "$post_rotation_status" | python -c "import json,sys; print(json.load(sys.stdin)['trusted_root_key_id'])")" = "$expected_root_key_id"
+          test "$(printf '%s' "$post_rotation_status" | python -c "import json,sys; print(len(json.load(sys.stdin)['transition_ids']))")" = "1"
+          test "$(printf '%s' "$post_rotation_status" | python -c "import json,sys; print(json.load(sys.stdin)['active_key_id'])")" != "$expected_active_key_id"
+          if AUDIT_ACTOR=github-actions AUDIT_REASON=ci-stale-rotation-approval AUDIT_CORRELATION_ID=33333333-3333-3333-3333-333333333333 AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID="$expected_active_key_id" docker compose --profile tools run --rm --no-deps audit-key-rotator; then
+            echo "stale audit key rotation approval unexpectedly succeeded"
+            exit 1
+          fi
           AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_CHECKPOINT_NAME=post-rotation-checkpoint.json docker compose --profile tools run --rm audit-checkpoint-exporter
           AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_CHECKPOINT_NAME=ci-checkpoint.json docker compose --profile tools run --rm audit-checkpoint-verifier
           AUDIT_CHAIN_ID=github-actions:${{ github.repository }} AUDIT_CHECKPOINT_NAME=post-rotation-checkpoint.json docker compose --profile tools run --rm audit-checkpoint-verifier

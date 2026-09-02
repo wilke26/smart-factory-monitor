@@ -377,6 +377,22 @@ services:
       - audit-attestation-public:/run/audit-attestation/public:ro
       - ${AUDIT_CHECKPOINT_DIRECTORY:-./audit-checkpoints}:/audit-checkpoints:ro
 
+  audit-keyring-verifier:
+    build:
+      context: .
+      args:
+        DEPENDENCY_LOCK: requirements/ml.lock
+    command: ["smart-factory-verify-audit-keyring", "--json"]
+    profiles: ["tools"]
+    restart: "no"
+    environment:
+      AUDIT_CHAIN_ID: ${AUDIT_CHAIN_ID:-smart-factory-local}
+      AUDIT_ATTESTATION_KEYRING_PATH: /run/audit-attestation/public/keyring
+      AUDIT_ATTESTATION_ROOT_KEY_ID_PATH: /run/audit-attestation/public/trusted-root-key-id
+      AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT: "true"
+    volumes:
+      - audit-attestation-public:/run/audit-attestation/public:ro
+
   audit-key-rotator:
     build:
       context: .
@@ -399,6 +415,7 @@ services:
       AUDIT_ACTOR: ${AUDIT_ACTOR:-}
       AUDIT_REASON: ${AUDIT_REASON:-}
       AUDIT_CORRELATION_ID: ${AUDIT_CORRELATION_ID:-}
+      AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID: ${AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID:-}
       AUDIT_CHAIN_ID: ${AUDIT_CHAIN_ID:-smart-factory-local}
       AUDIT_CHECKPOINT_PATH: /audit-checkpoints/unused.json
       AUDIT_ATTESTATION_PRIVATE_KEY_PATH: /run/audit-attestation/private/private.pem

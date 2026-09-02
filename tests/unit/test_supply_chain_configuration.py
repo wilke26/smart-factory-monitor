@@ -186,6 +186,10 @@ def test_package_exposes_offline_release_verifier() -> None:
 
     assert 'smart-factory-verify-release = "smart_factory.release_verification:main"' in project
     assert 'smart-factory-release-signature = "smart_factory.release_signature:main"' in project
+    assert (
+        'smart-factory-verify-audit-keyring = "smart_factory.verify_audit_keyring_main:main"'
+        in project
+    )
 
 
 def test_ci_never_receives_external_release_signing_authority() -> None:
@@ -203,7 +207,18 @@ def test_colocated_audit_root_is_explicitly_limited_to_local_development() -> No
         encoding="utf-8"
     )
 
-    assert compose.count('AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT: "true"') == 3
+    assert compose.count('AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT: "true"') == 4
     assert "AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT=false" in environment_example
     assert "AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID=" in environment_example
+    assert "AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID=" in environment_example
     assert "trusted_root_key_id_path" not in keyring
+
+
+def test_audit_rotation_requires_verified_active_key_precondition() -> None:
+    compose = (REPOSITORY_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    workflow = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "smart-factory-verify-audit-keyring" in compose
+    assert "AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID" in compose
+    assert "pre_rotation_status=" in workflow
+    assert 'AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID="$expected_active_key_id"' in workflow

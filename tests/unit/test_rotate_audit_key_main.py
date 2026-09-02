@@ -43,10 +43,13 @@ def test_rotates_and_closes_audit_trail(
         correlation_id=UUID("11111111-1111-1111-1111-111111111111"),
     )
 
-    run(runtime_settings(), checkpoint_settings, audit_settings)
+    run(runtime_settings(), checkpoint_settings, audit_settings, "a" * 64)
 
     trail_type.return_value.open.assert_called_once_with(timeout=10)
     trail_type.return_value.close.assert_called_once_with()
     keyring_type.assert_called_once()
     rotator_type.assert_called_once()
-    service_type.return_value.rotate.assert_called_once_with(audit_settings.context)
+    service_type.return_value.rotate.assert_called_once_with(
+        audit_settings.context,
+        expected_active_key_id="a" * 64,
+    )

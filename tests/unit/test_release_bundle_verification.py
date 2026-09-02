@@ -24,7 +24,7 @@ from smart_factory.release_signature import (
 )
 from smart_factory.release_verification import main, verify_release_bundle
 
-VERSION = "0.26.0"
+VERSION = "0.27.0"
 REVISION = "a" * 40
 DIGEST = "sha256:" + "b" * 64
 IMAGE = "ghcr.io/wilke26/smart-factory-monitor"

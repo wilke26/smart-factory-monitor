@@ -30,7 +30,9 @@ def test_audits_started_and_successful_rotation() -> None:
     )
     trail = Mock()
 
-    result = AuditAttestationKeyRotationService(rotator, trail).rotate(context())
+    result = AuditAttestationKeyRotationService(rotator, trail).rotate(
+        context(), expected_active_key_id="a" * 64
+    )
 
     assert result.new_key_id == "b" * 64
     events = [call.args[0] for call in trail.append.call_args_list]
@@ -52,8 +54,25 @@ def test_audits_failed_rotation_and_reraises() -> None:
     trail = Mock()
 
     with pytest.raises(OSError, match="disk full"):
-        AuditAttestationKeyRotationService(rotator, trail).rotate(context())
+        AuditAttestationKeyRotationService(rotator, trail).rotate(
+            context(), expected_active_key_id="a" * 64
+        )
 
     events = [call.args[0] for call in trail.append.call_args_list]
     assert events[-1].outcome is OperatorActionOutcome.FAILED
     assert events[-1].error_type == "OSError"
+
+
+def test_rejects_unapproved_active_key_before_audit_event() -> None:
+    rotator = Mock()
+    rotator.exclusive.return_value = nullcontext()
+    rotator.current_key_id.return_value = "b" * 64
+    trail = Mock()
+
+    with pytest.raises(ValueError, match="does not match approved key"):
+        AuditAttestationKeyRotationService(rotator, trail).rotate(
+            context(), expected_active_key_id="a" * 64
+        )
+
+    trail.append.assert_not_called()
+    rotator.rotate.assert_not_called()

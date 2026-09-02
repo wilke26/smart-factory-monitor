@@ -172,3 +172,8 @@ unrelated root and prove that the externally pinned fingerprint still rejects it
 tests require the production root value by default, reject malformed fingerprints and
 root/public-key mismatches, and permit the co-located marker only when the explicit local
 development switch is enabled.
+
+For v0.27, tests verify deterministic full-keyring summaries and reject orphaned keys,
+disconnected or non-terminal histories, malformed transition filenames, and stale active-key
+approvals. CI obtains the active key from the read-only verifier, binds the rotation to that
+value, and proves that the root remains fixed while exactly one transition advances the tip.

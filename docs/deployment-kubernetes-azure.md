@@ -64,6 +64,10 @@ Operational Jobs that verify checkpoints or rotate audit-attestation keys must r
 `AUDIT_ATTESTATION_TRUSTED_ROOT_KEY_ID` directly from an independently managed Secret
 (for example, synchronized from Infisical). Do not mount that value from the writable
 keyring PVC, and do not enable `AUDIT_ATTESTATION_ALLOW_COLOCATED_ROOT` in the cluster.
+Before rotation, run the read-only keyring verifier and retain its JSON evidence with the
+approved change. Inject the reviewed `active_key_id` as
+`AUDIT_ATTESTATION_EXPECTED_ACTIVE_KEY_ID`; never derive and consume it inside the same
+unreviewed privileged Job.
 
 ## Azure Container Registry and AKS
 
@@ -73,7 +77,7 @@ identity:
 ```bash
 az acr build \
   --registry "$ACR_NAME" \
-  --image smart-factory-monitor:0.26.0 \
+  --image smart-factory-monitor:0.27.0 \
   --build-arg DEPENDENCY_LOCK=requirements/ml.lock .
 
 az aks update \
@@ -117,7 +121,7 @@ kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding \
 The Azure namespace carries
 `security.smart-factory-monitor.io/require-digest-images=true`. After admission
 registration has propagated, use a server-side dry run to confirm that a Deployment with
-an image such as `smart-factory-monitor:0.26.0` is denied. Only then apply the
+an image such as `smart-factory-monitor:0.27.0` is denied. Only then apply the
 digest-bound release YAML. The ordinary Azure overlay deliberately retains a review tag
 and will be rejected in the protected namespace.
 
