@@ -113,14 +113,14 @@ def test_container_publication_and_evidence_assembly_use_isolated_permissions() 
     assert "PRIVATE_KEY" not in assemble_job
 
 
-def test_attestation_and_publication_use_isolated_permissions() -> None:
+def test_attestation_and_draft_creation_use_isolated_permissions() -> None:
     workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     attest_job = workflow.split("  release-attest:", maxsplit=1)[1].split(
-        "\n  release-publish:", maxsplit=1
+        "\n  release-draft:", maxsplit=1
     )[0]
-    publish_job = workflow.split("  release-publish:", maxsplit=1)[1].split(
-        "\n  compose:", maxsplit=1
-    )[0]
+    draft_job = workflow.split("  release-draft:", maxsplit=1)[1].split("\n  compose:", maxsplit=1)[
+        0
+    ]
 
     assert "needs: release-assemble" in attest_job
     assert "attestations: write" in attest_job
@@ -134,17 +134,24 @@ def test_attestation_and_publication_use_isolated_permissions() -> None:
     assert "python -m build" not in attest_job
     assert "anchore/sbom-action" not in attest_job
 
-    assert "needs: [release-assemble, release-attest]" in publish_job
-    assert "needs.release-assemble.result == 'success'" in publish_job
-    assert "needs.release-attest.result == 'success'" in publish_job
-    assert "needs.release-attest.result == 'skipped'" in publish_job
-    assert "contents: write" in publish_job
-    assert "id-token: write" not in publish_job
-    assert "attestations: write" not in publish_job
-    assert 'gh release create "${GITHUB_REF_NAME}"' in publish_job
-    assert "sha256sum --check SHA256SUMS" in publish_job
-    assert "Durable encrypted package and container evidence was published" in publish_job
-    assert "retention-days: 30" not in publish_job
+    assert "needs: [release-assemble, release-attest]" in draft_job
+    assert "needs.release-assemble.result == 'success'" in draft_job
+    assert "needs.release-attest.result == 'success'" in draft_job
+    assert "needs.release-attest.result == 'skipped'" in draft_job
+    assert "contents: write" in draft_job
+    assert "id-token: write" not in draft_job
+    assert "attestations: write" not in draft_job
+    assert 'gh release create "${GITHUB_REF_NAME}"' in draft_job
+    assert "--draft" in draft_job
+    assert "needs.release-assemble.outputs.image" in draft_job
+    assert "needs.release-assemble.outputs.digest" in draft_job
+    assert "needs.release-assemble.outputs.release_revision" in draft_job
+    assert "needs.release-assemble.outputs.release_version" in draft_job
+    assert "${GITHUB_SHA}" not in draft_job
+    assert "gh release edit" not in draft_job
+    assert "sha256sum --check SHA256SUMS" in draft_job
+    assert "Publish only after" in draft_job
+    assert "retention-days: 30" not in draft_job
     assert "sbom-path:" not in workflow
     assert "push-to-registry: true" not in workflow
 

@@ -8,8 +8,12 @@ import binascii
 import hashlib
 import json
 import os
+import shutil
+import stat
 import sys
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +68,38 @@ def _write_once(path: Path, content: bytes, mode: int) -> Path:
         temporary_path.unlink(missing_ok=True)
         raise
     return path
+
+
+@contextmanager
+def _stable_bundle_snapshot(directory: Path) -> Iterator[Path]:
+    if directory.is_symlink() or not directory.is_dir():
+        raise ValueError("release bundle must be a real directory")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise ValueError("release signing requires no-follow file support")
+    with tempfile.TemporaryDirectory(prefix="smart-factory-release-sign-") as temporary:
+        snapshot = Path(temporary)
+        snapshot.chmod(0o700)
+        for source in directory.iterdir():
+            if Path(source.name).name != source.name:
+                raise ValueError("release bundle entry name is invalid")
+            flags = os.O_RDONLY | os.O_NOFOLLOW
+            try:
+                descriptor = os.open(source, flags)
+            except OSError as error:
+                raise ValueError(
+                    f"release bundle entry must be a regular file: {source.name}"
+                ) from error
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    raise ValueError(f"release bundle entry must be a regular file: {source.name}")
+                with (
+                    os.fdopen(descriptor, "rb", closefd=False) as input_file,
+                    (snapshot / source.name).open("xb") as output_file,
+                ):
+                    shutil.copyfileobj(input_file, output_file)
+            finally:
+                os.close(descriptor)
+        yield snapshot
 
 
 def signing_key_fingerprint(public_key: Ed25519PublicKey) -> str:
@@ -159,20 +195,30 @@ def sign_release_bundle(
     signature_path: Path,
     private_key_path: Path,
     password: bytes,
+    *,
+    expected_version: str,
+    expected_revision: str,
+    expected_image_reference: str,
 ) -> Path:
     from smart_factory.release_verification import verify_release_bundle
 
     _validate_destination(signature_path, "release signature")
-    release = verify_release_bundle(directory)
-    expected_name = release_signature_name(release["version"])
-    if signature_path.name != expected_name:
-        raise ValueError(f"release signature must be named {expected_name}")
-    private_key = _load_private_key(private_key_path, password)
-    payload = _signature_payload(
-        directory,
-        release,
-        signing_key_fingerprint(private_key.public_key()),
-    )
+    with _stable_bundle_snapshot(directory) as snapshot:
+        release = verify_release_bundle(
+            snapshot,
+            expected_version=expected_version,
+            expected_revision=expected_revision,
+            expected_image_reference=expected_image_reference,
+        )
+        expected_name = release_signature_name(release["version"])
+        if signature_path.name != expected_name:
+            raise ValueError(f"release signature must be named {expected_name}")
+        private_key = _load_private_key(private_key_path, password)
+        payload = _signature_payload(
+            snapshot,
+            release,
+            signing_key_fingerprint(private_key.public_key()),
+        )
     signature = private_key.sign(_canonical_json(payload))
     document = {**payload, "signature": base64.b64encode(signature).decode("ascii")}
     return _write_once(signature_path, _canonical_json(document) + b"\n", 0o644)
@@ -243,6 +289,9 @@ def main() -> None:
     sign_parser.add_argument("--output", type=Path, required=True)
     sign_parser.add_argument("--private-key", type=Path, required=True)
     sign_parser.add_argument("--private-key-password-env", required=True)
+    sign_parser.add_argument("--expected-version", required=True)
+    sign_parser.add_argument("--expected-revision", required=True)
+    sign_parser.add_argument("--expected-image-reference", required=True)
     arguments = parser.parse_args()
     try:
         password = _password_from_environment(arguments.private_key_password_env)
@@ -263,6 +312,9 @@ def main() -> None:
             arguments.output,
             arguments.private_key,
             password,
+            expected_version=arguments.expected_version,
+            expected_revision=arguments.expected_revision,
+            expected_image_reference=arguments.expected_image_reference,
         )
         print(f"Created release signature: {signature_path}")
     except (OSError, TypeError, ValueError) as error:

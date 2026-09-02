@@ -1,4 +1,4 @@
-# Architecture v0.24.0
+# Architecture v0.25.0
 
 ## Scope
 
@@ -48,6 +48,10 @@ Version 0.24 adds a distinct post-publication trust boundary. An external operat
 the verified checksum root, manifest, release identity, and container reference with a
 dedicated Ed25519 key that GitHub never receives. Offline consumers authenticate the
 detached signature with an independently distributed public key.
+Version 0.25 moves that trust boundary before publication. CI produces an unsigned draft,
+and the external signer atomically checks the independently expected version, full Git
+revision, and digest-qualified image reference while creating the signature. Only the
+complete, freshly reverified eight-file bundle is published.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -265,6 +269,16 @@ and digest-qualified container reference plus the Ed25519 public-key fingerprint
 signing private key is encrypted, write-once generated, excluded from source and container
 contexts, and never supplied to a GitHub workflow. The public key and fingerprint must be
 distributed through an independent trusted channel.
+
+v0.25 removes the validation-to-signing gap. The signing API cannot infer its authorization
+target solely from the untrusted bundle: callers must provide all three release identity
+values, which are enforced by the same verification call immediately before the private
+key is used. CI attaches the seven internal-evidence files to a draft rather than exposing
+an unsigned public release. The controlled operator adds the detached signature, verifies
+a fresh eight-file download, revalidates the remote annotated tag, and publishes the draft
+only during an exclusive finalization window. GitHub still exposes separate upload and
+publication operations, so consumers continue to require the detached signature even when
+repository-level release immutability is enabled.
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,

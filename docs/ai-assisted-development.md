@@ -159,3 +159,10 @@ then reject a modified signature, an internally rechecksummed replacement, a rec
 replayed against another commit, a different public key, an empty password, and output
 replacement. CI configuration tests also prove that no release-signing private key,
 password, or signing command enters GitHub Actions.
+
+For v0.25, parameterized tests prove that an expected-version, expected-revision, or
+expected-container mismatch prevents signature creation. CLI tests require the same three
+independent identity inputs. A same-identity replacement between verification and signing
+is proven to receive only a signature for the protected snapshot, and environments without
+no-follow file support fail closed. Workflow configuration tests require draft creation and
+exclude direct publication of an unsigned bundle.

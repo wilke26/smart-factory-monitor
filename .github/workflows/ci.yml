@@ -318,6 +318,8 @@ jobs:
     outputs:
       image: ${{ steps.container.outputs.image }}
       digest: ${{ steps.container.outputs.digest }}
+      release_revision: ${{ steps.container.outputs.release_revision }}
+      release_version: ${{ steps.container.outputs.release_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -340,6 +342,9 @@ jobs:
           cd ../container-dist && sha256sum --check SHA256SUMS
       - name: Read fail-closed container identity
         id: container
+        env:
+          RELEASE_REVISION: ${{ needs.release-build.outputs.release_revision }}
+          RELEASE_VERSION: ${{ needs.release-build.outputs.package_version }}
         run: |
           python - <<'PY'
           import json, os, re
@@ -356,9 +361,17 @@ jobs:
               raise SystemExit("container evidence contains an invalid image name")
           if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
               raise SystemExit("container evidence contains an invalid image digest")
+          revision = os.environ["RELEASE_REVISION"]
+          version = os.environ["RELEASE_VERSION"]
+          if not re.fullmatch(r"[0-9a-f]{40}", revision):
+              raise SystemExit("release evidence contains an invalid revision")
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+              raise SystemExit("release evidence contains an invalid version")
           with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
               output.write(f"image={image}\n")
               output.write(f"digest={digest}\n")
+              output.write(f"release_revision={revision}\n")
+              output.write(f"release_version={version}\n")
           PY
       - name: Render digest-bound Kubernetes release manifest
         env:
@@ -431,7 +444,7 @@ jobs:
           subject-name: ${{ needs.release-assemble.outputs.image }}
           subject-digest: ${{ needs.release-assemble.outputs.digest }}
 
-  release-publish:
+  release-draft:
     if: >-
       always() &&
       startsWith(github.ref, 'refs/tags/v') &&
@@ -448,7 +461,7 @@ jobs:
         with:
           name: smart-factory-monitor-release-evidence-${{ github.ref_name }}
           path: dist
-      - name: Verify and publish durable release evidence
+      - name: Verify and create unsigned release draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -456,19 +469,20 @@ jobs:
           sha256sum --check SHA256SUMS
           gh release create "${GITHUB_REF_NAME}" ./* \
             --repo "${GITHUB_REPOSITORY}" \
+            --draft \
             --verify-tag \
             --title "Smart Factory Monitor ${GITHUB_REF_NAME}" \
-            --notes "Checksummed packages, digest-bound Kubernetes deployment evidence, and encrypted ML-runtime and container SBOMs for ${GITHUB_SHA}."
+            --notes "Unsigned draft containing checksummed packages, digest-bound Kubernetes deployment evidence, and encrypted ML-runtime and container SBOMs for ${{ needs.release-assemble.outputs.release_revision }}. Expected version: ${{ needs.release-assemble.outputs.release_version }}. Expected container: ${{ needs.release-assemble.outputs.image }}@${{ needs.release-assemble.outputs.digest }}. Publish only after the externally controlled release signature has been uploaded and independently verified."
       - name: Report private-repository attestation mode
         if: >-
           github.event.repository.visibility != 'public' &&
           vars.ENABLE_GITHUB_ATTESTATIONS != 'true'
         run: |
-          echo "::notice title=GitHub attestation skipped::Private repositories require GitHub Enterprise Cloud. Durable encrypted package and container evidence was published."
+          echo "::notice title=GitHub attestation skipped::Private repositories require GitHub Enterprise Cloud. Durable encrypted package and container evidence was prepared as a draft."
           {
             echo "### GitHub provenance not created"
             echo "This private repository has not enabled Enterprise Cloud artifact attestations."
-            echo "Checksummed package and container evidence plus both encrypted SBOMs are retained by the GitHub Release."
+            echo "Checksummed package and container evidence plus both encrypted SBOMs are attached to the unsigned draft."
           } >> "${GITHUB_STEP_SUMMARY}"
 
   compose:

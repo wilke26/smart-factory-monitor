@@ -113,7 +113,7 @@ write permission.
 
 ## Release provenance and SBOM privacy
 
-The release jobs run only for an annotated semantic release tag such as `v0.24.0`. The tag
+The release jobs run only for an annotated semantic release tag such as `v0.25.0`. The tag
 must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
 `origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
 created. Ordinary `main` pushes and pull requests do not create release evidence,
@@ -150,18 +150,19 @@ Sigstore.
 attestation. `release-assemble` has no elevated permission and verifies both intermediate
 evidence sets before rendering all application deployments with the resolved digest.
 `release-attest` receives only signing permissions and consumes the final checksummed
-evidence. `release-publish` receives only `contents: write` and creates a GitHub Release
-containing the wheel, source archive, schema-3 manifest, checksums, both encrypted SBOMs,
-and the digest-bound Kubernetes YAML. One-day workflow artifacts are inter-job transport;
-the GitHub Release and GHCR hold the durable repository copies. Production retention still
-requires independently administered immutable mirrors.
+evidence. `release-draft` receives only `contents: write` and creates an unpublished GitHub
+Release draft containing the wheel, source archive, schema-3 manifest, checksums, both
+encrypted SBOMs, and the digest-bound Kubernetes YAML. It cannot complete publication.
+One-day workflow artifacts are inter-job transport; the finalized GitHub Release and GHCR
+hold the durable repository copies. Production retention still requires independently
+administered immutable mirrors.
 
 GitHub artifact attestations in private repositories require GitHub Enterprise Cloud. The
 workflow therefore enables the attestation step automatically only for public repositories.
 For a private Enterprise Cloud repository, set the repository Actions variable
 `ENABLE_GITHUB_ATTESTATIONS=true`. Leave it unset for private Free, Pro, or Team repositories;
-the durable release will still be created and the unsupported attestation job will be
-skipped instead of failing publication.
+the durable release draft will still be created and the unsupported attestation job will
+be skipped instead of blocking finalization.
 
 After downloading a release, verify every file checksum, confirm that the recorded image
 digest is pullable, and, where present, verify attestations against this repository:
@@ -169,11 +170,12 @@ digest is pullable, and, where present, verify attestations against this reposit
 ```bash
 cd dist
 smart-factory-verify-release . \
-  --expected-version 0.24.0 \
-  --expected-revision '<full-release-commit-sha>'
+  --expected-version 0.25.0 \
+  --expected-revision '<full-release-commit-sha>' \
+  --expected-image-reference 'ghcr.io/wilke26/smart-factory-monitor@sha256:<full-digest>'
 IMAGE_REFERENCE=$(python -c 'import json; print(json.load(open("release-manifest.json"))["container"]["reference"])')
 docker pull "$IMAGE_REFERENCE"
-gh attestation verify smart_factory_monitor-0.24.0-py3-none-any.whl \
+gh attestation verify smart_factory_monitor-0.25.0-py3-none-any.whl \
   --repo wilke26/smart-factory-monitor
 ```
 
@@ -191,7 +193,7 @@ dependency:
 ```bash
 export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
 smart-factory-verify-release . \
-  --expected-version 0.24.0 \
+  --expected-version 0.25.0 \
   --expected-revision '<full-release-commit-sha>' \
   --public-key /secure/release-evidence-public.pem \
   --private-key /secure/release-evidence-private.pem \
@@ -226,33 +228,98 @@ Store the encrypted private key and password under separate controlled recovery 
 Distribute the public key and the printed SHA-256 fingerprint independently from GitHub.
 The files are write-once: key generation and signing refuse existing destinations.
 
-After GitHub has published the seven normal v0.24 assets, download and verify them, then
-create and authenticate the detached signature locally before uploading that public
-signature document as the eighth release asset:
+After the tag workflow succeeds, GitHub contains an unpublished seven-asset draft. Record
+the intended version and annotated-tag revision locally. Copy the complete expected image
+reference from the successful `release-draft` evidence and confirm that the registry
+resolves the version tag to that digest. Do not derive the authorization values only from
+the downloaded bundle.
+
+Download the draft and create its signature with all three expected identities in the same
+command. The signer copies the bundle into a protected snapshot before verification, so a
+concurrent local replacement cannot change the bytes that receive the signature:
 
 ```bash
+release_tag=v0.25.0
+release_version=0.25.0
+tag_ref="refs/tags/${release_tag}"
+verified_tag_ref="refs/release-finalization/${release_tag}"
+git fetch --force --no-tags origin "${tag_ref}:${verified_tag_ref}"
+test "$(git cat-file -t "$verified_tag_ref")" = tag
+release_revision=$(git rev-parse "${verified_tag_ref}^{commit}")
+expected_image_reference='ghcr.io/wilke26/smart-factory-monitor@sha256:<full-digest>'
 release_directory=$(mktemp -d)
-release_revision=$(git rev-list -n 1 v0.24.0)
-gh release download v0.24.0 --dir "$release_directory"
+gh release download "$release_tag" --dir "$release_directory"
 smart-factory-verify-release "$release_directory" \
-  --expected-version 0.24.0 \
-  --expected-revision "$release_revision"
+  --expected-version "$release_version" \
+  --expected-revision "$release_revision" \
+  --expected-image-reference "$expected_image_reference"
 
 export RELEASE_SIGNING_KEY_PASSWORD='<from-secret-manager>'
-signature_path="$release_directory/smart_factory_monitor-0.24.0.release-signature.json"
+signature_path="$release_directory/smart_factory_monitor-${release_version}.release-signature.json"
 smart-factory-release-signature sign "$release_directory" \
   --output "$signature_path" \
   --private-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-private.pem" \
-  --private-key-password-env RELEASE_SIGNING_KEY_PASSWORD
+  --private-key-password-env RELEASE_SIGNING_KEY_PASSWORD \
+  --expected-version "$release_version" \
+  --expected-revision "$release_revision" \
+  --expected-image-reference "$expected_image_reference"
 unset RELEASE_SIGNING_KEY_PASSWORD
 
 smart-factory-verify-release "$release_directory" \
-  --expected-version 0.24.0 \
+  --expected-version "$release_version" \
   --expected-revision "$release_revision" \
+  --expected-image-reference "$expected_image_reference" \
   --signature "$signature_path" \
   --signing-public-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-public.pem" \
   --json
-gh release upload v0.24.0 "$signature_path"
+gh release upload "$release_tag" "$signature_path"
+```
+
+Before publication, establish an exclusive finalization window: protect the release tag
+from updates and ensure no other identity can modify releases until the ceremony finishes.
+Download the remote draft into a new directory and authenticate the complete eight-file
+set. Re-upload exactly those verified bytes with replacement enabled, download and verify
+them once more, then re-fetch the remote annotated tag and require its commit to equal the
+signed revision. Enable the repository's immutable-release setting where the plan supports
+it before publishing the already complete draft:
+
+```bash
+verification_directory=$(mktemp -d)
+gh release download "$release_tag" --dir "$verification_directory"
+smart-factory-verify-release "$verification_directory" \
+  --expected-version "$release_version" \
+  --expected-revision "$release_revision" \
+  --expected-image-reference "$expected_image_reference" \
+  --signature "$verification_directory/smart_factory_monitor-${release_version}.release-signature.json" \
+  --signing-public-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-public.pem" \
+  --json
+
+gh release upload "$release_tag" "$verification_directory"/* --clobber
+finalization_directory=$(mktemp -d)
+gh release download "$release_tag" --dir "$finalization_directory"
+smart-factory-verify-release "$finalization_directory" \
+  --expected-version "$release_version" \
+  --expected-revision "$release_revision" \
+  --expected-image-reference "$expected_image_reference" \
+  --signature "$finalization_directory/smart_factory_monitor-${release_version}.release-signature.json" \
+  --signing-public-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-public.pem" \
+  --json
+
+prepublish_tag_ref="refs/release-finalization-prepublish/${release_tag}"
+git fetch --force --no-tags origin "${tag_ref}:${prepublish_tag_ref}"
+test "$(git cat-file -t "$prepublish_tag_ref")" = tag
+test "$(git rev-parse "${prepublish_tag_ref}^{commit}")" = "$release_revision"
+gh release edit "$release_tag" --draft=false --verify-tag
+
+published_directory=$(mktemp -d)
+gh release download "$release_tag" --dir "$published_directory"
+smart-factory-verify-release "$published_directory" \
+  --expected-version "$release_version" \
+  --expected-revision "$release_revision" \
+  --expected-image-reference "$expected_image_reference" \
+  --signature "$published_directory/smart_factory_monitor-${release_version}.release-signature.json" \
+  --signing-public-key "$RELEASE_SIGNING_KEY_DIRECTORY/release-signing-public.pem" \
+  --json
 ```
 
 On later downloads, pass both `--signature` and `--signing-public-key`. Signature
@@ -260,7 +327,11 @@ authentication completes before any optional private-SBOM recovery. Without thos
 arguments, the verifier deliberately rejects the unexpected eighth file rather than
 silently treating an unauthenticated signature as trusted. The signature proves control
 of the external Ed25519 key over the exact bundle; it does not replace registry
-availability checks, GitHub provenance, or immutable off-site retention.
+availability checks, GitHub provenance, protected release-tag administration, exclusive
+draft finalization, or immutable off-site retention. GitHub draft upload and publication
+are separate API calls; the exclusive window, final readback, immutable-release setting,
+and consumer-side signature verification are required controls rather than one atomic
+server transaction.
 
 GitHub attestation verification for a private repository requires Enterprise Cloud and an
 authenticated GitHub CLI identity with access; the offline bundle verifier does not.

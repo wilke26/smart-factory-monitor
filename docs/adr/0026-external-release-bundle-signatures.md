@@ -1,6 +1,6 @@
 # ADR 0026: Externally anchored release-bundle signatures
 
-- Status: accepted
+- Status: superseded by ADR 0027
 - Date: 2026-09-02
 
 ## Context
