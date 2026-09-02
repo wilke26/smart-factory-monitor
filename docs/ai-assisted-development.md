@@ -143,3 +143,12 @@ Kubernetes v1 policy and binding API, fail-closed evaluation, namespace-level op
 tag-plus-digest references, abbreviated digests, and uppercase repositories. CI renders
 the standalone policy independently from application overlays so cluster administration
 does not become an application release permission.
+
+For v0.23, verification starts from an untrusted downloaded directory rather than CI's
+assumptions. Tests cover the complete valid bundle plus altered artifacts, extra files,
+symbolic links, checksum traversal, cross-release encrypted envelopes, mutable deployment
+references, unexpected release identities, and the wrong recipient key. A temporary
+encrypted RSA key additionally proves public-key matching and authenticated recovery of
+both SPDX documents without leaving plaintext beside the release assets. The release
+assembly job runs the same offline verifier before any publishing-capable job receives the
+bundle.

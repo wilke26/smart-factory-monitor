@@ -113,7 +113,7 @@ write permission.
 
 ## Release provenance and SBOM privacy
 
-The release jobs run only for an annotated semantic release tag such as `v0.22.0`. The tag
+The release jobs run only for an annotated semantic release tag such as `v0.23.0`. The tag
 must exactly match `project.version` in `pyproject.toml`, its commit must be reachable from
 `origin/main`, and the quality matrix plus the full Compose job must pass before evidence is
 created. Ordinary `main` pushes and pull requests do not create release evidence,
@@ -168,48 +168,44 @@ digest is pullable, and, where present, verify attestations against this reposit
 
 ```bash
 cd dist
-sha256sum --check SHA256SUMS
-gh attestation verify smart_factory_monitor-0.22.0-py3-none-any.whl \
-  --repo wilke26/smart-factory-monitor
+smart-factory-verify-release . \
+  --expected-version 0.23.0 \
+  --expected-revision '<full-release-commit-sha>'
 IMAGE_REFERENCE=$(python -c 'import json; print(json.load(open("release-manifest.json"))["container"]["reference"])')
 docker pull "$IMAGE_REFERENCE"
+gh attestation verify smart_factory_monitor-0.23.0-py3-none-any.whl \
+  --repo wilke26/smart-factory-monitor
 ```
 
-Recover the private SBOM only in the controlled recovery environment. Supply an encrypted
-private-key password through an environment variable rather than a command-line argument,
-then compare the recovered plaintext digest with `sbom.sha256` in
-`release-manifest.json`:
+The base command is fully offline and needs no private key or optional dependency. It
+checks exact directory membership, manifest schema and identities, every checksum and
+recorded size, both encrypted-envelope bindings and their common recipient fingerprint,
+the digest-qualified image, and all three Deployment image references. Add `--json` for
+machine-readable output.
+
+Recover and authenticate the private SBOMs only in the controlled recovery environment.
+Supply an encrypted private-key password through an environment variable rather than a
+command-line argument. Installing the `ml` extra provides the optional cryptography
+dependency:
 
 ```bash
 export RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD='<from-secret-manager>'
-python scripts/release_evidence_crypto.py decrypt \
-  --input smart_factory_monitor-0.22.0.ml-runtime.spdx.json.enc \
-  --output recovered.ml-runtime.spdx.json \
+smart-factory-verify-release . \
+  --expected-version 0.23.0 \
+  --expected-revision '<full-release-commit-sha>' \
+  --public-key /secure/release-evidence-public.pem \
   --private-key /secure/release-evidence-private.pem \
   --private-key-password-env RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD \
-  --version 0.22.0 \
-  --revision '<full-release-commit-sha>'
-python scripts/release_evidence_crypto.py decrypt \
-  --input smart_factory_monitor-0.22.0.container.spdx.json.enc \
-  --output recovered.container.spdx.json \
-  --private-key /secure/release-evidence-private.pem \
-  --private-key-password-env RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD \
-  --version 0.22.0 \
-  --revision '<full-release-commit-sha>'
-python - <<'PY'
-import hashlib, json
-from pathlib import Path
-manifest = json.loads(Path("release-manifest.json").read_text())
-ml_digest = hashlib.sha256(Path("recovered.ml-runtime.spdx.json").read_bytes()).hexdigest()
-container_digest = hashlib.sha256(Path("recovered.container.spdx.json").read_bytes()).hexdigest()
-assert ml_digest == manifest["sbom"]["sha256"]
-assert container_digest == manifest["container"]["sbom"]["sha256"]
-PY
+  --json
 unset RELEASE_EVIDENCE_PRIVATE_KEY_PASSWORD
 ```
 
-Private-repository verification requires Enterprise Cloud and an authenticated GitHub CLI
-identity with access.
+The verifier decrypts into a protected temporary directory, validates each plaintext
+SHA-256, SPDX 2.x marker, and package count, then deletes the recovered copies. It never
+writes plaintext into the downloaded release directory.
+
+GitHub attestation verification for a private repository requires Enterprise Cloud and an
+authenticated GitHub CLI identity with access; the offline bundle verifier does not.
 If the repository becomes public, new GitHub attestations use public Sigstore transparency
 infrastructure and must be treated as permanent public release records. Creating the tag is
 therefore an explicit publication decision. v0.21 attests the published container name and

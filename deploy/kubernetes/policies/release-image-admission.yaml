@@ -13,7 +13,7 @@ spec:
   validations:
     - expression: >-
         object.spec.template.spec.containers.all(container,
-        container.image.matches('^([a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?/)?([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*@sha256:[0-9a-f]{64}$'))
+        container.image.matches('^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+@sha256:[0-9a-f]{64}$'))
       message: >-
         Every application container image must be a lowercase repository reference
         pinned directly to a full sha256 digest; tags and unqualified mutable names are denied.
@@ -21,7 +21,7 @@ spec:
     - expression: >-
         !has(object.spec.template.spec.initContainers) ||
         object.spec.template.spec.initContainers.all(container,
-        container.image.matches('^([a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?/)?([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*@sha256:[0-9a-f]{64}$'))
+        container.image.matches('^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+@sha256:[0-9a-f]{64}$'))
       message: >-
         Every application init-container image must be a lowercase repository reference
         pinned directly to a full sha256 digest; tags and unqualified mutable names are denied.

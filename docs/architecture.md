@@ -1,4 +1,4 @@
-# Architecture v0.22.0
+# Architecture v0.23.0
 
 ## Scope
 
@@ -40,6 +40,10 @@ Version 0.21 publishes one scanned release container, resolves its canonical reg
 digest, encrypts its exact inventory, and binds the release evidence plus Kubernetes YAML
 to those bytes. Version 0.22 enforces that deployment contract at the Kubernetes API with
 a native fail-closed digest-only admission policy for explicitly protected namespaces.
+Version 0.23 makes the schema-3 release directory an independently verifiable object. A
+single offline command validates exact membership, all recorded identities and checksums,
+the encrypted-envelope bindings, the container reference, and every deployment image;
+optional external key material also proves the recipient and recovers both private SBOMs.
 
 ```text
 Offline ML lifecycle                              Online telemetry path
@@ -239,6 +243,15 @@ lowercase repository reference pinned directly to a full SHA-256 digest. The pol
 cluster prerequisite rather than part of the application release authority. It enforces
 image identity syntax; it does not independently verify signatures, provenance, or
 registry authorization.
+
+v0.23 closes the evidence-consumption gap. `smart-factory-verify-release` treats the
+download directory as hostile input, accepts only the seven schema-3 release files, and
+checks their names, media types, lengths, SHA-256 identities, encrypted release metadata,
+shared recipient fingerprint, canonical container digest, supported platform, and all
+three Deployment references without network access. Cryptographic SBOM recovery remains
+optional and lazily loaded, so checksum and metadata validation needs only the base
+package. Recovered plaintext exists only in a mode-0700 temporary directory and is checked
+against its manifest digest, SPDX version, and package count before deletion.
 
 Standard Kubernetes `NetworkPolicy` cannot select external dependencies by DNS name. The
 base therefore defaults application pods to deny and permits only DNS, monitoring ingress,

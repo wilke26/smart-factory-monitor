@@ -96,6 +96,7 @@ def test_container_publication_and_evidence_assembly_use_isolated_permissions() 
     assert "upload-artifact: false" in container_job
 
     assert "needs: [release-build, release-container]" in assemble_job
+    assert 'python-version: "3.12"' in assemble_job
     assert "packages: write" not in assemble_job
     assert "contents: write" not in assemble_job
     assert "attestations: write" not in assemble_job
@@ -104,6 +105,12 @@ def test_container_publication_and_evidence_assembly_use_isolated_permissions() 
     assert "smart-factory-monitor-source-evidence" in assemble_job
     assert "smart-factory-monitor-container-evidence" in assemble_job
     assert "smart-factory-monitor-release-evidence" in assemble_job
+    assert "Verify complete release bundle offline" in assemble_job
+    assert "python -m smart_factory.release_verification dist" in assemble_job
+    assert "--expected-version" in assemble_job
+    assert "--expected-revision" in assemble_job
+    assert "--expected-image-reference" in assemble_job
+    assert "PRIVATE_KEY" not in assemble_job
 
 
 def test_attestation_and_publication_use_isolated_permissions() -> None:
@@ -162,3 +169,9 @@ def test_release_recovery_material_is_excluded_from_source_and_build_context() -
     ):
         assert ignored_name in gitignore
         assert ignored_name in dockerignore
+
+
+def test_package_exposes_offline_release_verifier() -> None:
+    project = (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'smart-factory-verify-release = "smart_factory.release_verification:main"' in project

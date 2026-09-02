@@ -12,9 +12,8 @@ AZURE_NAMESPACE_PATH = (
     REPOSITORY_ROOT / "deploy" / "kubernetes" / "overlays" / "azure" / "namespace.yaml"
 )
 IMAGE_PATTERN = re.compile(
-    r"^([a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?/)?"
-    r"([a-z0-9]+([._-][a-z0-9]+)*/)*"
-    r"[a-z0-9]+([._-][a-z0-9]+)*@sha256:[0-9a-f]{64}$"
+    r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?::[0-9]+)?"
+    r"(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+@sha256:[0-9a-f]{64}$"
 )
 
 
@@ -39,6 +38,7 @@ def test_digest_pattern_rejects_tags_and_accepts_release_references() -> None:
     assert IMAGE_PATTERN.fullmatch(f"ghcr.io/wilke26/smart-factory-monitor@{digest}")
     assert IMAGE_PATTERN.fullmatch(f"registry.example:5000/team/application@{digest}")
     assert not IMAGE_PATTERN.fullmatch("smart-factory-monitor:0.22.0")
+    assert not IMAGE_PATTERN.fullmatch(f"smart-factory-monitor@{digest}")
     assert not IMAGE_PATTERN.fullmatch(f"ghcr.io/wilke26/smart-factory-monitor:0.22.0@{digest}")
     assert not IMAGE_PATTERN.fullmatch("ghcr.io/wilke26/smart-factory-monitor@sha256:not-a-digest")
     assert not IMAGE_PATTERN.fullmatch(f"GHCR.io/wilke26/smart-factory-monitor@{digest}")
