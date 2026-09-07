@@ -327,12 +327,12 @@ jobs:
           python-version: "3.12"
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
       - name: Download encrypted source evidence
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: smart-factory-monitor-source-evidence-${{ github.ref_name }}
           path: source-dist
       - name: Download encrypted container evidence
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: smart-factory-monitor-container-evidence-${{ github.ref_name }}
           path: container-dist
@@ -428,7 +428,7 @@ jobs:
       artifact-metadata: write
     steps:
       - name: Download checksummed release evidence
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: smart-factory-monitor-release-evidence-${{ github.ref_name }}
           path: dist
@@ -457,7 +457,7 @@ jobs:
       contents: write
     steps:
       - name: Download encrypted release evidence
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: smart-factory-monitor-release-evidence-${{ github.ref_name }}
           path: dist
