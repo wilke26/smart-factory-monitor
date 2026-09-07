@@ -3,10 +3,11 @@
 ## Reporting a Vulnerability
 
 Please report security vulnerabilities using GitHub's private
-vulnerability reporting: open the **Security** tab of this
-repository and select **Report a vulnerability**. This creates a
-private advisory visible only to the maintainer and avoids public
-disclosure before a fix is available.
+vulnerability reporting: open the **Security and quality** tab of this
+repository, select **Advisories** under **Reporting**, and choose
+**Report a vulnerability**. This creates a private advisory visible
+only to the maintainer and avoids public disclosure before a fix is
+available.
 
 Please do not open a public issue for security-sensitive reports.
 
