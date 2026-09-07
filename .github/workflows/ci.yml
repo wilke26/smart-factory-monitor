@@ -117,7 +117,7 @@ jobs:
             --target "${RUNNER_TEMP}/smart-factory-ml-runtime" \
             "dist/smart_factory_monitor-${{ steps.version.outputs.package_version }}-py3-none-any.whl"
       - name: Generate private SPDX ML-runtime SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: ${{ runner.temp }}/smart-factory-ml-runtime
           format: spdx-json
@@ -249,7 +249,7 @@ jobs:
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
           echo "reference=${IMAGE}@${digest}" >> "${GITHUB_OUTPUT}"
       - name: Generate private SPDX container SBOM from published digest
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ steps.publish.outputs.reference }}
           format: spdx-json
