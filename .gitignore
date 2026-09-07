@@ -32,3 +32,6 @@ docker/mosquitto/data/*
 docker/mosquitto/log/*
 !docker/mosquitto/data/.gitkeep
 !docker/mosquitto/log/.gitkeep
+.infisical.json
+# Local security scan reports
+gitleaks-report.json
